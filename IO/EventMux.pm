@@ -568,6 +568,8 @@ sub disconnect {
 
     return if $self->{fhs}{$fh}{disconnecting};
 
+    # FIXME: move code to readall so we are sure we don't get reads after a
+    # disconnect.
     # Return the leftovers in inbuffer to the user.
     my $cfg = $self->{fhs}{$fh};
     
