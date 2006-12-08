@@ -2,6 +2,25 @@ package IO::EventMux;
 
 our $VERSION = "1.00";
 
+#FIXME:
+#
+# 1. Should a user invoked non delayed disconnect still read all the data on the
+# socket. eg.
+#   1. read only the header from a rpm, and not downloading the rest of the
+#      100mb.
+#   2. wget -O - http://www.rapanden.dk, send GET request and disconnect and
+#      read buffer later.
+#   
+#   idea:
+#
+#   User invoked disconnect delayed and non delayed throws out any buffers and
+#   stop reading on the socket. As the user did not care about receiving data,
+#   the he would have waited with calling the disconnect call.
+#   
+#   This also makes it much simpler to do the PriorityType as we now are sure
+#   there is nothing in the socket when we detect a disconnect.
+#
+
 =head1 NAME
 
 IO::EventMux - Multiplexer for sockets, pipes and any other types of
@@ -503,7 +522,7 @@ sub add {
     # If this is not UDP(SOCK_DGRAM) send a connected event.
     if ((!UNIVERSAL::can($client, "socktype") 
             or ($client->socktype || 0) != SOCK_DGRAM)) {
-        #FIXME Only works IO::Socket, change to use a socktype that works for
+        #FIXME Only works on IO::Socket, change to use a socktype that works for
         # all kind of filehandles.
 
         if (!$opts{Listen}) {

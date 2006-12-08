@@ -2,6 +2,24 @@
 use strict;
 use warnings;
 
+# This tests how we handle a premature disconnect where a socket is 
+# disconnected before we have called mux on it.
+#
+# It also looks at the order of the events pr. file handle so we are sure 
+# EventMux returns them in the correct order:
+#
+# 1. connect or connected: Is the first event depending if it's from a 
+#    accept call(ie. a child of a listening socket) or a connecting socket.
+# 2. read, canread: is optional and might not happen as the other end can quit
+#    before sending any data.
+# 3. disconnect: Happens when using delayed disconnect, all disconnects EventMux 
+#    detects is delayed. The user has to call disconnect($fh, 1); to get this 
+#    event.
+# 4. disconnected: Is the last event a file handle can generate.
+#
+#
+#
+#
 my $WITHOLD = 0;
 
 use Test::More tests => 1;
