@@ -6,7 +6,7 @@ my $WITHOLD = 0;
 
 use Test::More tests => 7;
 use IO::EventMux;
-use IO::EventMuxOld;
+#use IO::EventMuxOld;
 
 my $PORT = 7007;
 

@@ -24,7 +24,6 @@ my $WITHOLD = 0;
 
 use Test::More tests => 1;
 use IO::EventMux;
-use IO::EventMuxOld;
 
 my $PORT = 7007;
 

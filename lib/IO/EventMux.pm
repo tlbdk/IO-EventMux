@@ -119,6 +119,7 @@ EventMux will continue read so long there is data on the file handle.
 
   my $mux = IO::EventMux->new( PriorityType => ['None'] );
 
+=back
 =cut
 
 sub new {
@@ -232,11 +233,11 @@ sub mux {
     # LineBuffered socket). This means that it may take arbitrarily long to
     # return, regardless of the timeout parameter, because the same timeout is
     # reused every time.
-    until ($event = $self->get_event(@_)) {}
+    until ($event = $self->_get_event(@_)) {}
     return $event;
 }
 
-sub get_event {
+sub _get_event {
     my ($self, $timeout) = @_;
 
     # actions to execute?
@@ -286,13 +287,13 @@ sub get_event {
 
             my $packederror = getsockopt($fh, SOL_SOCKET, SO_ERROR);
             if(!defined $packederror) {
-                $self->push_event({ type => 'connected', fh => $fh });
+                $self->_push_event({ type => 'connected', fh => $fh });
             } else {
                 my $error = unpack("i", $packederror);
                 if($error == 0) {
-                    $self->push_event({ type => 'connected', fh => $fh });
+                    $self->_push_event({ type => 'connected', fh => $fh });
                 } else {
-                    $self->push_event({ type => 'error',
+                    $self->_push_event({ type => 'error',
                             fh => $fh, error=> $error });
                 }
             }
@@ -300,7 +301,7 @@ sub get_event {
         } elsif ($self->{fhs}{$fh}{auto_write}) {
             $self->send($fh);
         } else {
-            $self->push_event({ type => 'can_write', fh => $fh });
+            $self->_push_event({ type => 'can_write', fh => $fh });
         }
     }
 
@@ -312,19 +313,19 @@ sub get_event {
             # new connection
             if ($self->{auto_accept}) {
                 my $client = $fh->accept or next;
-                $self->push_event({ type => 'connect', fh => $client });
+                $self->_push_event({ type => 'connect', fh => $client });
                 $self->add($client, %{$self->{fhs}{$fh}{opts}}, Listen => 0);
                 # Set connected as we already sent a connect.
                 $self->{fhs}{$client}{connected} = 1;
             } else {
-                $self->push_event({ type => 'accept', fh => $fh });
+                $self->_push_event({ type => 'accept', fh => $fh });
             }
 
         } elsif (!$self->{fhs}{$fh}{auto_read}) {
-            $self->push_event({ type => 'can_read', fh => $fh });
+            $self->_push_event({ type => 'can_read', fh => $fh });
 
         } else {
-            $self->read_all($fh);
+            $self->_read_all($fh);
         }
     }
 
@@ -605,24 +606,24 @@ sub disconnect {
     $self->{fhs}{$fh}{disconnecting} = 1;
 
     # Return the leftovers in inbuffer to the user.
-    $self->read_all($fh);
+    $self->_read_all($fh);
     
     $self->{readfh}->remove($fh);
     $self->{writefh}->remove($fh);
     delete $self->{listenfh}{$fh};
 
     if ($delayed) {
-        $self->push_event({ type => 'disconnect', fh => $fh });
+        $self->_push_event({ type => 'disconnect', fh => $fh });
         
         # wait with the close so a valid file handle can be returned
         push @{$self->{actionq}}, sub {
             $self->close_fh($fh);
-            $self->push_event({ type => 'disconnected', fh => $fh });
+            $self->_push_event({ type => 'disconnected', fh => $fh });
         };
             
     } else {
         $self->close_fh($fh);
-        $self->push_event({ type => 'disconnected', fh => $fh });
+        $self->_push_event({ type => 'disconnected', fh => $fh });
     }
 }
 
@@ -749,13 +750,13 @@ sub sendto {
     }
 
     if ($meta->{type} eq "dgram") {
-        return $self->send_dgram($fh, $to, @data);
+        return $self->_send_dgram($fh, $to, @data);
     } else {
-        return $self->send_stream($fh, @data);
+        return $self->_send_stream($fh, @data);
     }
 }
 
-sub send_dgram {
+sub _send_dgram {
     my ($self, $fh, $all_to, @newdata) = @_;
     my $meta = $self->{fhs}{$fh} or return undef;
 
@@ -765,7 +766,7 @@ sub send_dgram {
 
     while (my $queue_item = shift @{$meta->{outbuffer}}) {
         my ($data, $to) = @$queue_item;
-        my $rv = $self->my_send($fh, $data, (defined $to ? $to : ()));
+        my $rv = $self->_my_send($fh, $data, (defined $to ? $to : ()));
 
         if (!defined $rv) {
             if ($! == POSIX::EWOULDBLOCK) {
@@ -774,7 +775,7 @@ sub send_dgram {
                 $self->{writefh}->add($fh);
                 return $packets_sent;
             } else {
-                $self->push_event({ type => 'error', error => $!, 
+                $self->_push_event({ type => 'error', error => $!, 
                     fh => $fh });
             }
             return undef;
@@ -793,7 +794,7 @@ sub send_dgram {
     return $packets_sent;
 }
 
-sub send_stream {
+sub _send_stream {
     my ($self, $fh, @data) = @_;
     my $meta = $self->{fhs}{$fh} or return undef;
 
@@ -809,22 +810,23 @@ sub send_stream {
         return 0;
     }
 
-    my $rv = $self->my_send($fh, $data);
+    my $rv = $self->_my_send($fh, $data);
     
     if (!defined $rv) {
-        if ($! == POSIX::EWOULDBLOCK or $! == POSIX::EAGAIN or !$self->{fhs}{$fh}{connected}) {
+        if ($! == POSIX::EWOULDBLOCK or $! == POSIX::EAGAIN 
+                or !$self->{fhs}{$fh}{connected}) {
             # try later
             $meta->{outbuffer} = $data;
             $self->{writefh}->add($fh);
             return 0;
         } else {
-            $self->push_event({ type => 'error', error => $!, 
+            $self->_push_event({ type => 'error', error => $!, 
                 fh => $fh });
         }
         return undef;
 
     } elsif ($rv < 0) {
-        $self->push_event({ type => 'error', error => $!, 
+        $self->_push_event({ type => 'error', error => $!, 
             fh => $fh });
         return undef;
 
@@ -840,13 +842,13 @@ sub send_stream {
 
     if($rv and !$self->{fhs}{$fh}{connected}) {
         $self->{fhs}{$fh}{connected} = 1;
-        $self->push_event({ type => 'connected', fh => $fh });
+        $self->_push_event({ type => 'connected', fh => $fh });
     }
 
     return $rv;
 }
 
-sub my_send {
+sub _my_send {
     my ($self, $fh, $data, @to) = @_;
 
     my $rv;
@@ -859,15 +861,7 @@ sub my_send {
     return $@ ? undef : $rv;
 }
 
-sub select_write {
-    $_[0]->{writefh}->add($_[1]);
-}
-
-sub unselect_write {
-    $_[0]->{writefh}->remove($_[1]);
-}
-
-sub push_event {
+sub _push_event {
     push @{$_[0]->{events}}, $_[1];
 }
 
@@ -889,7 +883,7 @@ sub nonblock {
 }
 
 # Keeps reading from a file handle until POSIX::EWOULDBLOCK is returned
-sub read_all {
+sub _read_all {
     my ($self, $fh) = @_;
     my $cfg = $self->{fhs}{$fh};
 
@@ -909,7 +903,7 @@ sub read_all {
 
             if (not defined $rv) {
                 if ($! != POSIX::EWOULDBLOCK) {
-                    $self->push_event({ type => 'error', error => $!, 
+                    $self->_push_event({ type => 'error', error => $!, 
                             fh => $fh });
                 }
                 $canread = 0;
@@ -959,7 +953,7 @@ sub read_all {
                 $copy{'data'} = substr($cfg->{inbuffer},
                     $datastart, $length+$offset);
                 substr($cfg->{inbuffer}, $datastart, $length+$offset) = '';
-                $self->push_event(\%copy);
+                $self->_push_event(\%copy);
             }
             
         } elsif($buffertype eq 'FixedSize') {
@@ -969,7 +963,7 @@ sub read_all {
                 my %copy = %event;
                 $copy{'data'} = substr($cfg->{inbuffer}, 0, $length);
                 substr($cfg->{inbuffer}, 0, $length) = '';
-                $self->push_event(\%copy);
+                $self->_push_event(\%copy);
             }
 
         } elsif($buffertype eq 'Split') {
@@ -978,7 +972,7 @@ sub read_all {
             while ($cfg->{inbuffer} =~ s/(.*)$regexp//) {
                 my %copy = %event;
                 $copy{'data'} = $1;
-                $self->push_event(\%copy);
+                $self->_push_event(\%copy);
             }
 
         } elsif($buffertype eq 'Regexp') {
@@ -987,7 +981,7 @@ sub read_all {
             while ($cfg->{inbuffer} =~ s/$regexp//) {
                 my %copy = %event;
                 $copy{'data'} = $1;
-                $self->push_event(\%copy);
+                $self->_push_event(\%copy);
             }
 
         } elsif($buffertype eq 'Disconnect') {
@@ -995,7 +989,7 @@ sub read_all {
         } elsif($buffertype eq 'None') {
             $event{'data'} = $cfg->{inbuffer};
             $cfg->{inbuffer} = '';
-            $self->push_event(\%event);
+            $self->_push_event(\%event);
         
         } else {
             die("Unknown Buffered type: $buffertype");
@@ -1005,10 +999,10 @@ sub read_all {
         if($cfg->{disconnecting} and defined $cfg->{inbuffer} 
                 and length($cfg->{inbuffer}) > 0) {
             if($cfg->{return_last}) {
-                $self->push_event({ type => 'read', fh => $fh, 
+                $self->_push_event({ type => 'read', fh => $fh, 
                     data => $cfg->{inbuffer}});
             } else {
-                $self->push_event({ type => 'read_last', fh => $fh, 
+                $self->_push_event({ type => 'read_last', fh => $fh, 
                     data => $cfg->{inbuffer}});
             }
             $cfg->{inbuffer} = '';

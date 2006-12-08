@@ -1,5 +1,8 @@
+Build.PL
+lib/IO/EventMux.pm
 MANIFEST
-Makefile.PL
-IO/EventMux.pm
 t/cfd.t
 t/disconnect.t
+t/fairness.t
+t/pod-coverage.t
+t/pod.t
