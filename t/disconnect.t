@@ -47,7 +47,7 @@ while(1) {
     my $fh    = ($event->{fh} or '');
     my $data  = ($event->{data} or '');
 
-    print("$fh $type: $data\n");
+    print("$fh $type: '$data'\n");
     push(@eventorder, $type);
 
     if($type eq 'connected') {
