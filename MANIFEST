@@ -1,0 +1,5 @@
+MANIFEST
+Makefile.PL
+IO/EventMux.pm
+t/cfd.t
+t/disconnect.t

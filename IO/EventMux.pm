@@ -1,5 +1,7 @@
 package IO::EventMux;
 
+our $VERSION = "1.00";
+
 =head1 NAME
 
 IO::EventMux - Multiplexer for sockets, pipes and any other types of
@@ -966,8 +968,7 @@ sub read_all {
 
 =head1 AUTHOR
 
-Jonas Jensen <jbj@knef.dk>
-Troels Liebe Bentsen <tlb@rapanden.dk>
+Jonas Jensen <jonas@infopro.dk>, Troels Liebe Bentsen <troels@infopro.dk>
 
 =cut
 
