@@ -580,25 +580,13 @@ sub disconnect {
     my ($self, $fh, $delayed) = @_;
 
     return if $self->{fhs}{$fh}{disconnecting};
+    $self->{fhs}{$fh}{disconnecting} = 1;
 
-    # FIXME: move code to readall so we are sure we don't get reads after a
-    # disconnect.
     # Return the leftovers in inbuffer to the user.
-    my $cfg = $self->{fhs}{$fh};
+    $self->read_all($fh);
     
-    if(defined $cfg->{inbuffer} and length($cfg->{inbuffer}) > 0) {
-        if($cfg->{return_last}) {
-            $self->push_event({ type => 'read', fh => $fh, 
-                data => $cfg->{inbuffer}});
-        } else {
-            $self->push_event({ type => 'read_last', fh => $fh, 
-                data => $cfg->{inbuffer}});
-        }
-    }
-            
     $self->{readfh}->remove($fh);
     $self->{writefh}->remove($fh);
-    $self->{fhs}{$fh}{disconnecting} = 1;
     delete $self->{listenfh}{$fh};
 
     if ($delayed) {
@@ -891,35 +879,52 @@ sub read_all {
     my ($self, $fh) = @_;
     my $cfg = $self->{fhs}{$fh};
 
-    while (1) {
-        my ($data, $rv, $sender) = ('');
-        if (UNIVERSAL::can($fh, "recv") and !$fh->isa("IO::Socket::SSL")) {
-            $rv = $fh->recv($data, 65536, 0);
-            $sender = $rv if defined $rv && $rv ne "";
-        } else {
-            $rv = sysread $fh, $data, 65536;
-        }
-
-        if (not defined $rv) {
-            if ($! != POSIX::EWOULDBLOCK) {
-                $self->push_event({ type => 'error', error => $!, fh => $fh });
+    my $canread = 1;
+    my $eventcount = int(@{$self->{events}}); 
+    while (int(@{$self->{events}}) > $eventcount or $canread) {
+        my ($sender);
+        
+        READ: while($canread) {
+            my ($data, $rv) = ('');
+            if (UNIVERSAL::can($fh, "recv") and !$fh->isa("IO::Socket::SSL")) {
+                $rv = $fh->recv($data, 65536, 0);
+                $sender = $rv if defined $rv && $rv ne "";
+            } else {
+                $rv = sysread $fh, $data, 65536;
             }
-            return;
+
+            if (not defined $rv) {
+                if ($! != POSIX::EWOULDBLOCK) {
+                    $self->push_event({ type => 'error', error => $!, 
+                            fh => $fh });
+                }
+                $canread = 0;
+                last READ;
+            }
+
+            if (length $data == 0 and $cfg->{type} eq "stream") {
+                # client disconnected
+                $self->disconnect($fh, 1);
+                $canread = 0;
+                last READ;
+            }
+
+            $cfg->{inbuffer} .= $data;
+            
+            # For dgram it's one read at a time.
+            if($cfg->{type} eq "dgram") { last READ; }
         }
 
-        if (length $data == 0 and $cfg->{type} eq "stream") {
-            # client disconnected
-            $self->disconnect($fh, 1);
-            return;
+        # No data on socket, break out of loop. 
+        if(not defined $cfg->{inbuffer}) {
+            last;
         }
-
-        my %event = (type => 'read', fh => $fh);
-        $event{'sender'} = $sender if defined $sender;
-
-        $cfg->{inbuffer} .= $data;
         
         my ($buffertype, @args) = @{$cfg->{buffered}};
         
+        my %event = (type => 'read', fh => $fh);
+        $event{'sender'} = $sender if defined $sender;
+
         if($buffertype eq 'Size') {
             my ($pattern, $offset) = (@args, 0); # Defaults to 0 if no offset
             my $length = 
@@ -966,12 +971,28 @@ sub read_all {
         } elsif($buffertype eq 'Disconnect') {
         
         } elsif($buffertype eq 'None') {
-            $event{'data'} = $data;
+            $event{'data'} = $cfg->{inbuffer};
+            $cfg->{inbuffer} = '';
             $self->push_event(\%event);
         
         } else {
             die("Unknown Buffered type: $buffertype");
         }
+        
+        # Return the last bit of buffer to the user when we get a disconnect.
+        if($cfg->{disconnecting} and defined $cfg->{inbuffer} 
+                and length($cfg->{inbuffer}) > 0) {
+            if($cfg->{return_last}) {
+                $self->push_event({ type => 'read', fh => $fh, 
+                    data => $cfg->{inbuffer}});
+            } else {
+                $self->push_event({ type => 'read_last', fh => $fh, 
+                    data => $cfg->{inbuffer}});
+            }
+            $cfg->{inbuffer} = '';
+        } 
+    
+        $eventcount = int(@{$self->{events}}); 
     }
 }
 
