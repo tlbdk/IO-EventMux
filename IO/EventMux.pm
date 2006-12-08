@@ -58,33 +58,43 @@ The default is C<'None'>.
 
 =over 2
 
-=item Fair
+=item FairByEvent
 
 File handles change turn generating an event for each C<mux()> call. So if
 one or more file handles are generating allot of events they are returned in a 
 fair way with the C<mux()> call.
 
-  my $mux = IO::EventMux->new( PriorityType => ['Fair'] );
+  my $mux = IO::EventMux->new( PriorityType => ['FairByEvent'] );
   
-  my $mux = IO::EventMux->new( PriorityType => ['Fair', $queue_length] );
+  my $mux = IO::EventMux->new( PriorityType => ['FairByEvent', $queue_length] );
 
 $queue_length is the number of events to queue before stopping to read from the file 
 handle.
 
-Default $queue_length is 10.
+Default $queue_length is 1.
 
-Using this PriorityType comes with at cost as there is extra queuing involved. 
+This is also the default PriorityType.
+
+=item FairByRead
+
+File handles are read in turn and the first file handle to be able to return 
+an event from the read data will return a event on the C<mux()> call.
+
+  my $mux = IO::EventMux->new( PriorityType => ['FairByRead'] );
+  my $mux = IO::EventMux->new( PriorityType => ['FairByRead', $reads_pr_turn] );
+
+$reads_pr_turn is the number of reads the file handle gets to generate an event.
+
+Default $reads_pr_turn is 1.
 
 =item None
 
 Events are generated based on the order the file handles are read, this will 
-allow file handles returning allot of events to monopolize the event loop.
+allow file handles returning allot of events to monopolize the event loop. This
+also allow the other end of the file handle to fill the memory of the host as
+EventMux will continue read so long there is data on the file handle.
 
   my $mux = IO::EventMux->new( PriorityType => ['None'] );
-
-This is also the default.
-
-This is the fastest PriorityType as it only uses a simple queuing structure. 
 
 =cut
 
@@ -93,6 +103,7 @@ sub new {
 
     bless {
         buffered      => ['None'],
+        prioritytype  => ['FairByEvent', 1],
         auto_accept   => 1,
         auto_write    => 1,
         auto_read     => 1,
