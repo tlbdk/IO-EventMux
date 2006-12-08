@@ -271,7 +271,6 @@ sub get_event {
                 } else {
                     $self->push_event({ type => 'error',
                             fh => $fh, error=> $error });
-                    $self->disconnect($fh, 1);
                 }
             }
 
@@ -752,11 +751,8 @@ sub send_dgram {
                 $self->{writefh}->add($fh);
                 return $packets_sent;
             } else {
-                # error on socket
-                # FIXME: We should properly return an error via an event 
-                # with the disconnect.
-                warn "send: $!";
-                $self->disconnect($fh, 1);
+                $self->push_event({ type => 'error', error => $!, 
+                    fh => $fh });
             }
             return undef;
 
@@ -799,19 +795,14 @@ sub send_stream {
             $self->{writefh}->add($fh);
             return 0;
         } else {
-            # error on socket
-            # FIXME: We should properly return an error via an event 
-            # with the disconnect.
-            warn "send: $!";
-            $self->disconnect($fh, 1);
+            $self->push_event({ type => 'error', error => $!, 
+                fh => $fh });
         }
         return undef;
 
     } elsif ($rv < 0) {
-        # FIXME: We should properly return an error via an event 
-        # with the disconnect.
-        warn;
-        $self->disconnect($fh, 1);
+        $self->push_event({ type => 'error', error => $!, 
+            fh => $fh });
         return undef;
 
     } elsif ($rv < length $data) {
