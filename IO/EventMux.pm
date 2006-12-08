@@ -20,6 +20,10 @@ our $VERSION = "1.00";
 #   This also makes it much simpler to do the PriorityType as we now are sure
 #   there is nothing in the socket when we detect a disconnect.
 #
+#   Buffering and UDP, how do we do that, we need to make a inbuffer, pr.
+#   sender???
+#
+#
 
 =head1 NAME
 
@@ -891,7 +895,7 @@ sub read_all {
 
     my $canread = 1;
     my $eventcount = int(@{$self->{events}}); 
-    while (int(@{$self->{events}}) > $eventcount or $canread) {
+    EVENT: while (int(@{$self->{events}}) > $eventcount or $canread) {
         my ($sender);
         
         READ: while($canread) {
@@ -923,6 +927,14 @@ sub read_all {
             
             # For dgram it's one read at a time.
             if($cfg->{type} eq "dgram") { last READ; }
+
+            if($self->{prioritytype}[0] eq 'FairByRead') {
+                $canread = 0;
+                last READ;
+            
+            } elsif ($self->{prioritytype}[0] eq 'FairByEvent') {
+                last READ;
+            }
         }
 
         # No data on socket, break out of loop. 
@@ -1001,8 +1013,13 @@ sub read_all {
             }
             $cfg->{inbuffer} = '';
         } 
-    
-        $eventcount = int(@{$self->{events}}); 
+        
+        if ($self->{prioritytype}[0] eq 'FairByEvent' 
+            and int(@{$self->{events}}) > $eventcount) {
+            last EVENT;
+        }
+
+        $eventcount = int(@{$self->{events}});
     }
 }
 
