@@ -83,18 +83,12 @@ The default is C<'None'>.
 
 =item FairByEvent
 
-File handles change turn generating an event for each C<mux()> call. So if
-one or more file handles are generating allot of events they are returned in a 
-fair way with the C<mux()> call.
+File handles change turn generating events and gets the minimum of number of 
+reads for generating one event, but if the data returned can be used to 
+generate more events all events will be pushed to the queue to be returned 
+with the C<mux()> call.
 
   my $mux = IO::EventMux->new( PriorityType => ['FairByEvent'] );
-  
-  my $mux = IO::EventMux->new( PriorityType => ['FairByEvent', $queue_length] );
-
-$queue_length is the number of events to queue before stopping to read from the file 
-handle.
-
-Default $queue_length is 1.
 
 This is also the default PriorityType.
 
@@ -115,9 +109,12 @@ Default $reads_pr_turn is 1.
 Events are generated based on the order the file handles are read, this will 
 allow file handles returning allot of events to monopolize the event loop. This
 also allow the other end of the file handle to fill the memory of the host as
-EventMux will continue read so long there is data on the file handle.
+EventMux will continue reading so long there is data on the file handle.
 
   my $mux = IO::EventMux->new( PriorityType => ['None'] );
+
+Use this PriorityType with care and only on trusted sources as it's very easy to
+exploit.
 
 =back
 =cut
@@ -248,6 +245,11 @@ sub _get_event {
     # actions to execute?
     while (my $action = shift @{$self->{actionq}}) {
         $action->($self);
+    }
+
+    # try after we have flushed the action queue
+    if (my $event = shift @{$self->{events}}) {
+        return $event;
     }
 
     # timeouts to respect?
@@ -970,18 +972,22 @@ sub _read_all {
             my ($regexp) = (@args);
 
             while ($cfg->{inbuffer} =~ s/(.*)$regexp//) {
-                my %copy = %event;
-                $copy{'data'} = $1;
-                $self->_push_event(\%copy);
+                if($1 ne '') {
+                    my %copy = %event;
+                    $copy{'data'} = $1;
+                    $self->_push_event(\%copy);
+                }
             }
 
         } elsif($buffertype eq 'Regexp') {
             my ($regexp) = (@args);
 
             while ($cfg->{inbuffer} =~ s/$regexp//) {
-                my %copy = %event;
-                $copy{'data'} = $1;
-                $self->_push_event(\%copy);
+                if($1 ne '') {
+                    my %copy = %event;
+                    $copy{'data'} = $1;
+                    $self->_push_event(\%copy);
+                }
             }
 
         } elsif($buffertype eq 'Disconnect') {
