@@ -962,18 +962,20 @@ sub _read_all {
         my %event = (type => 'read', fh => $fh);
         $event{'sender'} = $sender if defined $sender;
 
-        if($buffertype eq 'Size') {
+        if(length($cfg->{inbuffer}) == 0) {
+            # DO NOTHING
+        } elsif($buffertype eq 'Size') {
             my ($pattern, $offset) = (@args, 0); # Defaults to 0 if no offset
             my $length = 
-                (unpack($pattern, $cfg->{inbuffer}))[0];
+                (unpack($pattern, $cfg->{inbuffer}))[0]+$offset;
             
             my $datastart = length(pack($pattern, $length));
 
             while($length <= length($cfg->{inbuffer})) {
                 my %copy = %event;
                 $copy{'data'} = substr($cfg->{inbuffer},
-                    $datastart, $length+$offset);
-                substr($cfg->{inbuffer}, $datastart, $length+$offset) = '';
+                    $datastart, $length);
+                substr($cfg->{inbuffer}, 0, $length+$datastart) = '';
                 $self->_push_event(\%copy);
             }
             
