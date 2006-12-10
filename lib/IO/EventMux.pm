@@ -92,7 +92,7 @@ with the C<mux()> call.
 
 This is also the default PriorityType.
 
-=item FairByRead
+=item FairByRead (NOT IMPLEMENTED)
 
 File handles are read in turn and the first file handle to be able to return 
 an event from the read data will return a event on the C<mux()> call.
