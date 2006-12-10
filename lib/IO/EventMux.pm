@@ -202,13 +202,13 @@ else it's off by default.
 
 =item disconnect
 
-A socket/pipe was set to be disconnected/closed delayed and all internal 
-references to the filehandle was removed.
+A socket/pipe was set to be disconnected/closed delayed and EventMux stooped
+listening for events on this file handle. Data like Meta is still accessible.
 
 =item disconnected
 
-A socket/pipe was disconnected/closed, the file descriptor and 
-all internal references to the filehandle was removed.
+A socket/pipe was disconnected/closed, the file descriptor,
+all internal references, and data store with the file handle was removed.
 
 =item can_write
 
