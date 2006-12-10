@@ -90,19 +90,15 @@ with the C<mux()> call.
 
   my $mux = IO::EventMux->new( PriorityType => ['FairByEvent'] );
 
-This is also the default PriorityType.
+  or
 
-=item FairByRead (NOT IMPLEMENTED)
-
-File handles are read in turn and the first file handle to be able to return 
-an event from the read data will return a event on the C<mux()> call.
-
-  my $mux = IO::EventMux->new( PriorityType => ['FairByRead'] );
-  my $mux = IO::EventMux->new( PriorityType => ['FairByRead', $reads_pr_turn] );
+  my $mux = IO::EventMux->new( PriorityType => ['FairByEvent', $reads_pr_turn] );
 
 $reads_pr_turn is the number of reads the file handle gets to generate an event.
 
-Default $reads_pr_turn is 1.
+Default $reads_pr_turn is 10. -1 for unlimited. 
+
+This is also the default PriorityType.
 
 =item None
 
@@ -900,12 +896,17 @@ sub _read_all {
     my ($self, $fh) = @_;
     my $cfg = $self->{fhs}{$fh};
 
-    my $canread = 1;
+    my $canread = -1;
+
+    if($self->{prioritytype}[0] eq 'FairByEvent') {
+        $canread = $self->{prioritytype}[1]; 
+    }
+
     my $eventcount = int(@{$self->{events}}); 
     EVENT: while (int(@{$self->{events}}) > $eventcount or $canread) {
         my ($sender);
         
-        READ: while($canread) {
+        READ: while($canread-- != 0) {
             my ($data, $rv) = ('');
             if (UNIVERSAL::can($fh, "recv") and !$fh->isa("IO::Socket::SSL")) {
                 $rv = $fh->recv($data, $cfg->{read_size}, 0);
