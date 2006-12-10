@@ -128,6 +128,7 @@ sub new {
         auto_accept   => 1,
         auto_write    => 1,
         auto_read     => 1,
+        read_size     => 65536,
         return_last   => 1,
         type          => 'stream',
         listenfh      => { },
@@ -402,6 +403,13 @@ C<can_read> event is returned.
 Note: If both ManualRead and ManualWrite is set, EventMux will not set the 
 socket to nonblocking. 
 
+=head3 ReadSize
+
+By default EventMux will try to read 65536 bytes from the file handle, setting
+this options to something smaller might help make it easier for EventMux to be
+fair about how it returns it's event, but will also give more overhead as more
+system calls will be required to empty a file handle.
+
 =head3 Buffered
 
 Can be a number of different buffering types, common for all of them is that
@@ -514,6 +522,9 @@ sub add {
 
     $self->{fhs}{$client}{auto_read} = (exists $opts{ManualRead} ?
         !$opts{ManualRead} : $self->{auto_read});
+
+    $self->{fhs}{$client}{read_size} = (exists $opts{ReadSize} ?
+        $opts{ReadSize} : $self->{read_size});
 
     if ($self->{fhs}{$client}{auto_read} 
         || $self->{fhs}{$client}{auto_write} || $opts{Listen}) {
@@ -897,10 +908,10 @@ sub _read_all {
         READ: while($canread) {
             my ($data, $rv) = ('');
             if (UNIVERSAL::can($fh, "recv") and !$fh->isa("IO::Socket::SSL")) {
-                $rv = $fh->recv($data, 65536, 0);
+                $rv = $fh->recv($data, $cfg->{read_size}, 0);
                 $sender = $rv if defined $rv && $rv ne "";
             } else {
-                $rv = sysread $fh, $data, 65536;
+                $rv = sysread $fh, $data, $cfg->{read_size};
             }
 
             if (not defined $rv) {
