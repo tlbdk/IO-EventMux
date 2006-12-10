@@ -117,10 +117,17 @@ exploit.
 
 sub new {
     my ($class, %opts) = @_;
+    
+    # FIXME: The whole options system is a ugly hack and needs to be fixed but
+    # until then this is how we set the defaults.
+    if(exists $opts{PriorityType} and @{$opts{PriorityType}} == 1) {
+        push(@{$opts{PriorityType}}, 10);
+    }
 
     bless {
         buffered      => ['None'],
-        prioritytype  => ['FairByEvent', 1],
+        prioritytype  => (exists $opts{PriorityType} ? $opts{PriorityType} : 
+            ['FairByEvent', 10]),
         auto_accept   => 1,
         auto_write    => 1,
         auto_read     => 1,

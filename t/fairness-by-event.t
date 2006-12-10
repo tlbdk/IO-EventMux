@@ -5,7 +5,7 @@ use warnings;
 use Test::More tests => 9;
 use IO::EventMux;
 
-my $mux = IO::EventMux->new();
+my $mux = IO::EventMux->new(PriorityType => ['FairByEvent']);
 
 sub create_writer {
     my ($data) = @_;
