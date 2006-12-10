@@ -240,14 +240,14 @@ sub mux {
 sub _get_event {
     my ($self, $timeout) = @_;
 
-    # actions to execute?
-    while (my $action = shift @{$self->{actionq}}) {
-        $action->($self);
-    }
-
     # pending events?
     if (my $event = shift @{$self->{events}}) {
         return $event;
+    }
+    
+    # actions to execute?
+    while (my $action = shift @{$self->{actionq}}) {
+        $action->($self);
     }
 
     # timeouts to respect?
