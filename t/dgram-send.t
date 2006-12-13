@@ -12,7 +12,7 @@ use Socket;
 
 my $mux = IO::EventMux->new();
 
-foreach my $i (1..339) {
+foreach my $i (1..1000) {
     my $fh = IO::Socket::INET->new(
         Proto    => 'udp',
         Type     => SOCK_DGRAM,
@@ -42,6 +42,9 @@ foreach my $i (1..339) {
 }
 
 while(1) {
-    my $event = $mux->mux(0); # FIXME: We hang here after some reads return.
-    print "$event->{type}\n";
+    my $event = $mux->mux(2); # FIXME: We hang here after some reads return.
+    if($event->{type} eq 'timeout') {
+        print "Everything ok :)\n";
+        exit;
+    }
 }
