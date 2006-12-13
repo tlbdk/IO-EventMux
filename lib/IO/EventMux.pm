@@ -285,6 +285,10 @@ sub _get_event {
         }
     }
 
+    #print("can_write:",int(@{$result[1]}),"\n");
+    #print("can_write:",join(",", @{$result[1]}),"\n");
+    #system("ls -l /proc/$$/fd|wc\n");
+
     # buffers to flush?, can_write is set.
     for my $fh (@{$result[1]}) {
         if(exists $self->{fhs}{$fh}{connected}
@@ -757,15 +761,15 @@ sub sendto {
         return;
     }
 
-    my $meta = $self->{fhs}{$fh} or return undef;
-    return undef if $meta->{disconnecting};
+    my $cfg = $self->{fhs}{$fh} or return undef;
+    return undef if $cfg->{disconnecting};
 
-    if (not $meta->{auto_write}) {
+    if (not $cfg->{auto_write}) {
         carp "send() on a ManualWrite file handle";
         return;
     }
 
-    if ($meta->{type} eq "dgram") {
+    if ($cfg->{type} eq "dgram") {
         return $self->_send_dgram($fh, $to, @data);
     } else {
         return $self->_send_stream($fh, @data);
@@ -775,7 +779,7 @@ sub sendto {
 sub _send_dgram {
     my ($self, $fh, $all_to, @newdata) = @_;
     my $meta = $self->{fhs}{$fh} or return undef;
-
+    
     push @{$meta->{outbuffer}}, map { [$_, $all_to] } @newdata;
 
     my $packets_sent = 0;
@@ -804,7 +808,6 @@ sub _send_dgram {
             $packets_sent++;
         }
     }
-
     $self->{writefh}->remove($fh);
 
     return $packets_sent;
@@ -902,7 +905,6 @@ sub nonblock {
 sub _read_all {
     my ($self, $fh) = @_;
     my $cfg = $self->{fhs}{$fh};
-
     my $canread = -1;
 
     if($self->{prioritytype}[0] eq 'FairByEvent') {
