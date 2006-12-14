@@ -733,6 +733,7 @@ sub disconnect {
             # wait with the close so a valid file handle can be returned
             push @{$self->{actionq}}, sub {
                 $self->close_fh($fh);
+                # FIXME: Return the number of { missing => bytes } to send. 
                 $self->_push_event({ type => 'disconnected', fh => $fh });
             };
         
@@ -747,7 +748,9 @@ sub disconnect {
     } else {
         $self->{readfh}->remove($fh);
         $self->{writefh}->remove($fh);
+        $self->_read_all($fh);
         $self->close_fh($fh);
+        # FIXME: Return the number of { missing => bytes } to send. 
         $self->_push_event({ type => 'disconnected', fh => $fh });
     }
 }
@@ -1159,6 +1162,7 @@ sub _read_all {
     if($cfg->{delayed_read} and $canread == 0) {
         push @{$self->{actionq}}, sub {
             $self->close_fh($fh);
+            # FIXME: Return the number of { missing => bytes } to send. 
             $self->_push_event({ type => 'disconnected', fh => $fh });
         };
     }
