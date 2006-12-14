@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl -I lib
 use strict;
 use warnings;
 
@@ -53,7 +53,6 @@ my $talker = IO::Socket::INET->new(
 print "talker:$talker\n";
 $mux->add($talker);
 $mux->send($talker, ("data 1\n", "data 2\n", "data 3"));
-$mux->disconnect($talker);
 
 my $timeout = 0;
 my $clients = 0;
@@ -82,6 +81,9 @@ while(1) {
     } elsif($type eq 'read') {
 
     } elsif($type eq 'read_last') {
+    
+    } elsif($type eq 'sent' and $fh eq $talker) {
+        $mux->disconnect($talker);
 
     } elsif($type eq 'timeout') {
     
@@ -91,5 +93,5 @@ while(1) {
 }
 
 is_deeply(\@eventorder, 
-    [qw(connected disconnected connect read read read_last 
+    [qw(connected connect sent disconnected read read read_last 
     disconnect disconnected)], "Event order is correct");

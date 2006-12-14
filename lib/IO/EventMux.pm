@@ -4,24 +4,9 @@ our $VERSION = "1.00";
 
 #FIXME:
 #
-# 1. Should a user invoked non delayed disconnect still read all the data on the
-# socket. eg.
-#   1. read only the header from a rpm, and not downloading the rest of the
-#      100mb.
-#   2. wget -O - http://www.rapanden.dk, send GET request and disconnect and
-#      read buffer later.
-#   
-#   idea:
-#
-#   User invoked disconnect delayed and non delayed throws out any buffers and
-#   stop reading on the socket. As the user did not care about receiving data,
-#   the he would have waited with calling the disconnect call.
-#   
-#   This also makes it much simpler to do the PriorityType as we now are sure
-#   there is nothing in the socket when we detect a disconnect.
-#
-#   Buffering and UDP, how do we do that, we need to make a inbuffer, pr.
-#   sender???
+#   * Buffering and UDP, how do we do that, we need to make a inbuffer, pr.
+#     sender???
+#   * Remove all die()/exit/print and replace Carp;
 #
 #
 
@@ -64,7 +49,7 @@ use warnings;
 use IO::Select;
 use IO::Socket;
 use Socket;
-use Carp qw(carp cluck);
+use Carp qw(carp cluck croak);
 use Fcntl;
 use POSIX qw(EWOULDBLOCK ENOTCONN EAGAIN F_GETFL F_SETFL O_NONBLOCK);
 
@@ -72,12 +57,16 @@ use POSIX qw(EWOULDBLOCK ENOTCONN EAGAIN F_GETFL F_SETFL O_NONBLOCK);
 
 Constructs an IO::EventMux object.
 
-=head3 PriorityType UNIMPLEMENTED, API MIGHT CHANGE 
+EventMux implements different types of priority queues that determined
+how events are returned or written.
 
-EventMux implements different types that priority queues that determined
-how events are returned.
+=head3 ReadPriorityType
 
-The default is C<'None'>.
+The ReadPriorityType defines how reads should be return with the mux call and
+how "fair" it should be. There is currently only 2 ReadPriorityTypes types to
+select from and using the default is recommended. 
+
+The default is C<'FairByEvent'>.
 
 =over 2
 
@@ -98,8 +87,6 @@ $reads_pr_turn is the number of reads the file handle gets to generate an event.
 
 Default $reads_pr_turn is 10. -1 for unlimited. 
 
-This is also the default PriorityType.
-
 =item None
 
 Events are generated based on the order the file handles are read, this will 
@@ -113,6 +100,22 @@ Use this PriorityType with care and only on trusted sources as it's very easy to
 exploit.
 
 =back
+
+=head3 WritePriorityType
+
+The WritePriorityType defines how writes should be sent to the sockets. 
+
+The default is C<'None'>.
+
+=over 2
+
+=item None
+FIXME: Write description.
+
+=item FairByWrite
+FIXME: Write description and implement.
+
+=back
 =cut
 
 sub new {
@@ -120,14 +123,22 @@ sub new {
     
     # FIXME: The whole options system is a ugly hack and needs to be fixed but
     # until then this is how we set the defaults.
-    if(exists $opts{PriorityType} and @{$opts{PriorityType}} == 1) {
-        push(@{$opts{PriorityType}}, 10);
+    if(exists $opts{ReadPriorityType} and @{$opts{ReadPriorityType}} == 1) {
+        push(@{$opts{ReadPriorityType}}, 10);
+    }
+
+    if(exists $opts{WritePriorityType} and @{$opts{WritePriorityType}} == 1) {
+        push(@{$opts{WritePriorityType}}, 10);
     }
 
     bless {
         buffered      => ['None'],
-        prioritytype  => (exists $opts{PriorityType} ? $opts{PriorityType} : 
+        readprioritytype  => (exists $opts{ReadPriorityType} ? 
+            $opts{ReadPriorityType} :
             ['FairByEvent', 10]),
+        writeprioritytype  => (exists $opts{WritePriorityType} ? 
+            $opts{WritePriorityType} :
+            ['FairByWrite', 1]),
         auto_accept   => 1,
         auto_write    => 1,
         auto_read     => 1,
@@ -201,15 +212,21 @@ return a read instead.
 The default is 1, in the sense that "None" is the default buffering type, but 
 else it's off by default.
 
+=item sent
+
+A socket has sent all the data in it's queue to the other end.
+
 =item disconnect
 
-A socket/pipe was set to be disconnected/closed delayed and EventMux stooped
-listening for events on this file handle. Data like Meta is still accessible.
+A file handle was detected to be have been disconnected by the other end or
+was the file handle was set to disconnected delayed by the user. So EventMux 
+stooped listening for events on this file handle. Data like Meta is still 
+accessible.
 
 =item disconnected
 
-A socket/pipe was disconnected/closed, the file descriptor,
-all internal references, and data store with the file handle was removed.
+A socket/pipe was disconnected/closed, the file descriptor, all internal 
+references, and data store with the file handle was removed.
 
 =item can_write
 
@@ -275,6 +292,7 @@ sub _get_event {
     my @result = IO::Select->select($self->{readfh}, $self->{writefh},
         undef, (!defined $timeout || $timeout > 0 ? $timeout : 0));
 
+    # FIXME: Timeout pr filehandle, why ????
     if (@result == 0) {
         if ($!) {
             return { type => 'error', error => $! };
@@ -309,7 +327,16 @@ sub _get_event {
             }
 
         } elsif ($self->{fhs}{$fh}{auto_write}) {
-            $self->send($fh);
+            my $cfg = $self->{fhs}{$fh} or die("Unknown filehandle $fh");
+
+            if ($cfg->{type} eq "dgram") {
+                $self->_send_dgram($fh);
+            } else {
+                $self->_send_stream($fh);
+            }
+       
+            
+
         } else {
             $self->_push_event({ type => 'can_write', fh => $fh });
         }
@@ -550,6 +577,7 @@ sub add {
         #FIXME Only works on IO::Socket, change to use a socktype that works for
         # all kind of filehandles.
 
+        # Add to find out when to send connected event.
         if (!$opts{Listen}) {
             $self->{writefh}->add($client);
             $self->{fhs}{$client}{connected} = 0;
@@ -564,6 +592,13 @@ sub add {
 
     # Save %opts, so we can given the to $fh->accept() children.
     $self->{fhs}{$client}{opts} = \%opts;
+    $self->{fhs}{$client}{inbuffer} = '';
+    
+    if($self->{fhs}{$client}{type} eq 'dgram') {
+        @{$self->{fhs}{$client}{outbuffer}} = [''];
+    } else {
+        $self->{fhs}{$client}{outbuffer} = '';
+    }
 }
 
 =head2 B<handles()>
@@ -609,39 +644,109 @@ sub remove {
     delete $self->{fhs}{$fh};
 }
 
-=head2 B<disconnect($fh, [ $delayed ])>
+=head2 B<disconnect($fh, [ %options ])>
 
 Close a file handle.  File handles managed by EventMux must be closed through
 this method to make sure all resources are freed.
 
-If $instant is not true, a 'disconnect' event will be returned by mux() before
-actually closing the file handle.
+  $mux->disconnect($fh);
+
+  or 
+
+  $mux->disconnect($fh, DelayedBy=>'none');
+
+If the DelayedBy options is not used only the current content of the in buffer
+will be returned to the user. Any data in the out buffer will be lost.
+
+=head3 DelayedBy
+
+It possible to delay a user invoked disconnect so IO::EventMux has a chance to
+empty it's buffers or file handle in a controlled manner. If Delayed is used 
+an 'disconnect' event will be returned by mux() before actually closing the 
+file handle. IO::EventMux will also keep meta data associated with the file 
+handle until the final 'disconnected' event is returned.
+
+There are four different modes of delayed disconnect. All have in common that
+the 'disconnect' event will be returned and that meta data lives on with that.
+
+NOTE: Listening file handles will always be closed instantly and ignores this
+option.
+
+=over 2
+
+=item write
+IO::EventMux will delay closing the file handle until the out buffer is empty.
+and will stop listening on read event on that socket.
+
+=item read
+IO::EventMux will delay closing the socket as long as it can read data from
+the file handle without it blocking. But will stop listing for write events
+for this file handle and also clear the out buffer.
+
+Using this mode can be a bit dangerous as you never know how quickly the other
+end will send your data. So it's very easy to not get everything with this mode.
+
+It recommended that you always try to disconnect when you know you have gotten
+all the data.
+
+=item both
+Using this implies that both the write and read condition has to met before
+IO::EventMux will close the socket.
+
+=item none
+Stop listening for both read and write event on the file file handle and return
+the 'read_last' event with the remaining part of the buffer.
+
+=back
 
 =cut
 
 sub disconnect {
-    my ($self, $fh, $delayed) = @_;
+    my ($self, $fh, %options) = @_;
 
-    return if $self->{fhs}{$fh}{disconnecting};
+    return undef if $self->{fhs}{$fh}{disconnecting};
     $self->{fhs}{$fh}{disconnecting} = 1;
-
-    # Return the leftovers in inbuffer to the user.
-    $self->_read_all($fh);
+   
+    if(exists $self->{listenfh}{$fh}) {
+        delete $self->{listenfh}{$fh};
+        $self->close_fh($fh);
+        $self->_push_event({ type => 'disconnected', fh => $fh });
     
-    $self->{readfh}->remove($fh);
-    $self->{writefh}->remove($fh);
-    delete $self->{listenfh}{$fh};
-
-    if ($delayed) {
-        $self->_push_event({ type => 'disconnect', fh => $fh });
+    } elsif(exists $options{DelayedBy}) {
         
-        # wait with the close so a valid file handle can be returned
-        push @{$self->{actionq}}, sub {
-            $self->close_fh($fh);
-            $self->_push_event({ type => 'disconnected', fh => $fh });
-        };
-            
+        if($options{DelayedBy} eq 'both') {
+            $self->{fhs}{$fh}{delayed_read} = 1;
+            $self->{fhs}{$fh}{delayed_write} = 1;
+        
+        } elsif($options{DelayedBy} eq 'read') {
+            $self->{writefh}->remove($fh);
+            $self->{fhs}{$fh}{delayed_read} = 1;
+
+        } elsif($options{DelayedBy} eq 'write') {
+            $self->{readfh}->remove($fh);
+            $self->{fhs}{$fh}{delayed_write} = 1;
+        
+        } elsif($options{DelayedBy} eq 'none') {
+            $self->{readfh}->remove($fh);
+            $self->{writefh}->remove($fh);
+
+            # wait with the close so a valid file handle can be returned
+            push @{$self->{actionq}}, sub {
+                $self->close_fh($fh);
+                $self->_push_event({ type => 'disconnected', fh => $fh });
+            };
+        
+        } else {
+            croak "Unknown DelayedBy type: $options{DelayedBy}";
+        }
+
+        # Return the leftovers from the in buffer to the user.
+        $self->_read_all($fh);
+        $self->_push_event({ type => 'disconnect', fh => $fh });
+
     } else {
+        $self->{readfh}->remove($fh);
+        $self->{writefh}->remove($fh);
         $self->close_fh($fh);
         $self->_push_event({ type => 'disconnected', fh => $fh });
     }
@@ -716,23 +821,22 @@ sub buflen {
 
 =head2 B<send($fh, @data)>
 
-Attempt to write each item of @data to $fh. Can only be used when ManualWrite is
+Queues @data to be written to the file handle $fh. Can only be used when ManualWrite is
 off (default).
 
 =over
 
 =item If the socket is of Type="stream" (default)
 
-Returns true on success, undef on error.  The data may or may not have been
-written to the socket when the function returns.  Therefore the socket should
-not be closed until L</B<buflen($fh)>> returns 0.  If an unrecoverable error
-occurs, the file handled will be closed.
+Returns true on success, undef on error. The data is sent when the socket
+becomes unblocked and a 'sent' event is posted when all data is sent and the 
+buffer is empty. Therefore the socket should not be closed until 
+L</B<buflen($fh)>> returns 0 or a sent request has been posted.  
 
 =item If the socket is of Type="dgram"
 
-Each item in @data will be sent as a separate packet.  Returns the number of
-packets written to the socket, which may include packets that were already in
-the queue. Returns undef on error, in which case the file handle is closed.
+Each item in @data will be sent as a separate packet.  Returns true on success
+and undef on error.
 
 =back
 
@@ -758,7 +862,7 @@ sub sendto {
 
     if (not defined $fh) {
         carp "send() on an undefined file handle";
-        return;
+        return undef;
     }
 
     my $cfg = $self->{fhs}{$fh} or return undef;
@@ -766,33 +870,36 @@ sub sendto {
 
     if (not $cfg->{auto_write}) {
         carp "send() on a ManualWrite file handle";
-        return;
+        return undef;
     }
 
     if ($cfg->{type} eq "dgram") {
-        return $self->_send_dgram($fh, $to, @data);
+        push @{$cfg->{outbuffer}}, map { [$_, $to] } @data;
+        $self->{writefh}->add($fh);
+        return 1;
+    
     } else {
-        return $self->_send_stream($fh, @data);
+        # send pending data before this
+        $cfg->{outbuffer} .= join('', @data);
+        $self->{writefh}->add($fh);
+        return 1;
     }
 }
 
 sub _send_dgram {
-    my ($self, $fh, $all_to, @newdata) = @_;
-    my $meta = $self->{fhs}{$fh} or return undef;
+    my ($self, $fh) = @_;
+    my $cfg = $self->{fhs}{$fh} or return undef;
     
-    push @{$meta->{outbuffer}}, map { [$_, $all_to] } @newdata;
-
     my $packets_sent = 0;
 
-    while (my $queue_item = shift @{$meta->{outbuffer}}) {
+    while (my $queue_item = shift @{$cfg->{outbuffer}}) {
         my ($data, $to) = @$queue_item;
         my $rv = $self->_my_send($fh, $data, (defined $to ? $to : ()));
 
         if (!defined $rv) {
             if ($! == POSIX::EWOULDBLOCK) {
                 # retry later
-                unshift @{$meta->{outbuffer}}, $queue_item;
-                $self->{writefh}->add($fh);
+                unshift @{$cfg->{outbuffer}}, $queue_item;
                 return $packets_sent;
             } else {
                 $self->_push_event({ type => 'error', error => $!, 
@@ -808,40 +915,36 @@ sub _send_dgram {
             $packets_sent++;
         }
     }
+    
+    $self->_push_event({type => 'sent', fh => $fh});
     $self->{writefh}->remove($fh);
 
     return $packets_sent;
 }
 
 sub _send_stream {
-    my ($self, $fh, @data) = @_;
-    my $meta = $self->{fhs}{$fh} or return undef;
+    my ($self, $fh) = @_;
+    my $cfg = $self->{fhs}{$fh} or return undef;
 
-    # send pending data before this
-    my $data = join "",
-        (defined $meta->{outbuffer} ? $meta->{outbuffer} : ()), @data;
-
-    delete $meta->{outbuffer};
-
-    if (length $data == 0) {
+    if ($cfg->{outbuffer} eq '') {
         # no data to send
         $self->{writefh}->remove($fh);
         return 0;
     }
 
-    my $rv = $self->_my_send($fh, $data);
+    my $rv = $self->_my_send($fh, $cfg->{outbuffer});
+    
+    # send pending data before this
     
     if (!defined $rv) {
-        if ($! == POSIX::EWOULDBLOCK or $! == POSIX::EAGAIN 
-                or !$self->{fhs}{$fh}{connected}) {
-            # try later
-            $meta->{outbuffer} = $data;
-            $self->{writefh}->add($fh);
-            return 0;
+        if ($! == POSIX::EWOULDBLOCK or $! == POSIX::EAGAIN) {
+            return undef;
+        
         } else {
             $self->_push_event({ type => 'error', error => $!, 
                 fh => $fh });
         }
+        
         return undef;
 
     } elsif ($rv < 0) {
@@ -849,19 +952,16 @@ sub _send_stream {
             fh => $fh });
         return undef;
 
-    } elsif ($rv < length $data) {
+    } elsif ($rv < length $cfg->{outbuffer}) {
         # only part of the data was sent
-        $meta->{outbuffer} = substr $data, $rv;
+        substr($cfg->{outbuffer}, $rv) = '';
         $self->{writefh}->add($fh);
         
     } else {
         # all pending data was sent
+        $cfg->{outbuffer} = '';
+        $self->_push_event({type => 'sent', fh => $fh});
         $self->{writefh}->remove($fh);
-    }
-
-    if($rv and !$self->{fhs}{$fh}{connected}) {
-        $self->{fhs}{$fh}{connected} = 1;
-        $self->_push_event({ type => 'connected', fh => $fh });
     }
 
     return $rv;
@@ -907,14 +1007,16 @@ sub _read_all {
     my $cfg = $self->{fhs}{$fh};
     my $canread = -1;
 
-    if($self->{prioritytype}[0] eq 'FairByEvent') {
-        $canread = $self->{prioritytype}[1]; 
+    if($self->{readprioritytype}[0] eq 'FairByEvent') {
+        $canread = $self->{readprioritytype}[1]; 
     }
 
+    # Loop while we are generating new events or reading from the file handle
     my $eventcount = int(@{$self->{events}}); 
     EVENT: while (int(@{$self->{events}}) > $eventcount or $canread) {
         my ($sender);
         
+        # $canread is 0 only when we would have blocked or found a disconnect.
         READ: while($canread-- != 0) {
             my ($data, $rv) = ('');
             if (UNIVERSAL::can($fh, "recv") and !$fh->isa("IO::Socket::SSL")) {
@@ -930,47 +1032,55 @@ sub _read_all {
                             fh => $fh });
                 }
                 $canread = 0;
+
+                if($cfg->{delayed_read}) {
+                    $self->{readfh}->remove($fh);
+                }
+
                 last READ;
             }
 
             if (length $data == 0 and $cfg->{type} eq "stream") {
                 # client disconnected
-                $self->disconnect($fh, 1);
+                $self->disconnect($fh, DelayedBy=>'none');
                 $canread = 0;
+
+                if($cfg->{delayed_read}) {
+                    $self->{readfh}->remove($fh);
+                }
+
                 last READ;
             }
 
             $cfg->{inbuffer} .= $data;
-            
-            # For dgram it's one read at a time.
-            if($cfg->{type} eq "dgram") { last READ; }
 
-            if($self->{prioritytype}[0] eq 'FairByRead') {
-                $canread = 0;
+            # For dgram it's one read at a time.
+            if($cfg->{type} eq "dgram") { 
+                $canread = -1; 
                 last READ;
-            
-            } elsif ($self->{prioritytype}[0] eq 'FairByEvent') {
+            }
+
+            if ($self->{readprioritytype}[0] eq 'FairByEvent') {
+                $canread = -1;
                 last READ;
             }
         }
 
-        # No data on socket, break out of loop. 
-        if(not defined $cfg->{inbuffer}) {
-            last;
+        # No data on file handle or buffer, break out of loop. 
+        if($cfg->{inbuffer} eq '') {
+            last EVENT;
         }
-        
+
         my ($buffertype, @args) = @{$cfg->{buffered}};
-        
+
         my %event = (type => 'read', fh => $fh);
         $event{'sender'} = $sender if defined $sender;
 
-        if(length($cfg->{inbuffer}) == 0) {
-            # DO NOTHING
-        } elsif($buffertype eq 'Size') {
+        if($buffertype eq 'Size') {
             my ($pattern, $offset) = (@args, 0); # Defaults to 0 if no offset
             my $length = 
-                (unpack($pattern, $cfg->{inbuffer}))[0]+$offset;
-            
+            (unpack($pattern, $cfg->{inbuffer}))[0]+$offset;
+
             my $datastart = length(pack($pattern, $length));
 
             while($length <= length($cfg->{inbuffer})) {
@@ -980,10 +1090,10 @@ sub _read_all {
                 substr($cfg->{inbuffer}, 0, $length+$datastart) = '';
                 $self->_push_event(\%copy);
             }
-            
+
         } elsif($buffertype eq 'FixedSize') {
             my ($length) = (@args);
-            
+
             while($length <= length($cfg->{inbuffer})) {
                 my %copy = %event;
                 $copy{'data'} = substr($cfg->{inbuffer}, 0, $length);
@@ -1014,36 +1124,45 @@ sub _read_all {
             }
 
         } elsif($buffertype eq 'Disconnect') {
-        
+
         } elsif($buffertype eq 'None') {
             $event{'data'} = $cfg->{inbuffer};
             $cfg->{inbuffer} = '';
             $self->_push_event(\%event);
-        
+
         } else {
             die("Unknown Buffered type: $buffertype");
         }
-        
+
         # Return the last bit of buffer to the user when we get a disconnect.
-        if($cfg->{disconnecting} and defined $cfg->{inbuffer} 
-                and length($cfg->{inbuffer}) > 0) {
+        if($cfg->{disconnecting} and length($cfg->{inbuffer}) > 0
+            and ($canread == 0 or !$cfg->{delayed_read})) {
             if($cfg->{return_last}) {
                 $self->_push_event({ type => 'read', fh => $fh, 
-                    data => $cfg->{inbuffer}});
+                        data => $cfg->{inbuffer}});
             } else {
                 $self->_push_event({ type => 'read_last', fh => $fh, 
-                    data => $cfg->{inbuffer}});
+                        data => $cfg->{inbuffer}});
             }
             $cfg->{inbuffer} = '';
         } 
-        
-        if ($self->{prioritytype}[0] eq 'FairByEvent' 
-            and int(@{$self->{events}}) > $eventcount) {
+
+        if ($self->{readprioritytype}[0] eq 'FairByEvent' 
+                and int(@{$self->{events}}) > $eventcount) {
             last EVENT;
         }
 
         $eventcount = int(@{$self->{events}});
     }
+    
+    # Disconnect if there is no more to read.
+    if($cfg->{delayed_read} and $canread == 0) {
+        push @{$self->{actionq}}, sub {
+            $self->close_fh($fh);
+            $self->_push_event({ type => 'disconnected', fh => $fh });
+        };
+    }
+
 }
 
 1;

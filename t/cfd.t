@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl -I lib
 use strict;
 use warnings;
 
@@ -86,13 +86,15 @@ while(1) {
             "'$test' = '$event->{data}'");
 
     } elsif($type eq 'read_last') {
+    
+    } elsif($type eq 'sent') {
 
     } elsif($type eq 'timeout') {
         ok(time-$time-$timeout <= 1, 
             "Timeout difference was not to long: 1 >= ".(time-$time-$timeout));
         ok(time-$time-$timeout >= 0, 
             "Timeout difference was not to short: 0 <= ".(time-$time-$timeout));
-        $mux->disconnect($talker,1);
+        $mux->disconnect($talker, DelayedBy=>'none');
     
     } else {
         die("Unhandled event $type");
