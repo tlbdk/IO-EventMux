@@ -595,7 +595,7 @@ sub add {
     $self->{fhs}{$client}{inbuffer} = '';
     
     if($self->{fhs}{$client}{type} eq 'dgram') {
-        @{$self->{fhs}{$client}{outbuffer}} = [''];
+        @{$self->{fhs}{$client}{outbuffer}} = ();
     } else {
         $self->{fhs}{$client}{outbuffer} = '';
     }
