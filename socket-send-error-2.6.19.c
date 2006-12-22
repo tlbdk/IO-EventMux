@@ -1,3 +1,4 @@
+// gcc -o socket-send-error-2.6.19 socket-send-error-2.6.19.c
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -17,7 +18,7 @@ int main() {
         ssize_t sent;
         struct sockaddr_in addr;
 
-        fd = socket(PF_INET, SOCK_DGRAM, 0); // TODO
+        fd = socket(PF_INET, SOCK_DGRAM, 0);
         if (fd < 0) {
             perror("socket()");
             return 1;
@@ -34,6 +35,6 @@ int main() {
     }
 
     fprintf(stderr, "Now try 'ping 127.0.0.1' in another shell\n");
-    pause();
+    sleep(100);
     return 0;
 }
