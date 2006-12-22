@@ -7,7 +7,6 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 
 int main() {
@@ -35,6 +34,6 @@ int main() {
     }
 
     fprintf(stderr, "Now try 'ping 127.0.0.1' in another shell\n");
-    sleep(100);
+    sleep(120);
     return 0;
 }
