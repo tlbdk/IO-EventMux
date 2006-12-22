@@ -331,11 +331,10 @@ sub _get_event {
 
             if ($cfg->{type} eq "dgram") {
                 $self->_send_dgram($fh);
+                print "Can Write\n";
             } else {
                 $self->_send_stream($fh);
             }
-       
-            
 
         } else {
             $self->_push_event({ type => 'can_write', fh => $fh });
@@ -901,6 +900,7 @@ sub _send_dgram {
 
         if (!defined $rv) {
             if ($! == POSIX::EWOULDBLOCK) {
+                print "WOULDBLOCK\n";
                 # retry later
                 unshift @{$cfg->{outbuffer}}, $queue_item;
                 return $packets_sent;

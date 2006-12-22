@@ -10,8 +10,8 @@ use Socket;
 # return POSIX::EWOULDBLOCK making EventMux hang trying to get an event
 # forever.
 
-ok(1==1, "Skip this test until we handle it");
-exit;
+#ok(1==1, "Skip this test until we handle it");
+#exit;
 
 my $mux = IO::EventMux->new();
 
