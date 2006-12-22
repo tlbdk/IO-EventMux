@@ -26,6 +26,7 @@ int main() {
         addr.sin_family = AF_INET;
         addr.sin_port = htons(2000);
         inet_aton("127.0.0.1", &addr.sin_addr);
+
         sent = sendto(fd, "", 0, 0, (struct sockaddr *)&addr, sizeof addr);
         if (sent < 0) {
             fprintf(stderr, "sendto fd %d: %s\n", fd, strerror(errno));
