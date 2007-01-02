@@ -6,8 +6,6 @@ our $VERSION = "1.00";
 #
 #   * Buffering and UDP, how do we do that, we need to make a inbuffer, pr.
 #     sender???
-#   * Remove all die()/exit/print and replace Carp;
-#
 #
 
 =head1 NAME
@@ -113,9 +111,11 @@ The default is C<'None'>.
 FIXME: Write description.
 
 =item FairByWrite
+
 FIXME: Write description and implement.
 
 =back
+
 =cut
 
 sub new {
@@ -177,17 +177,18 @@ Nothing happened and timeout occurred.
 The C<select()> system call failed. The event hash will have the key 'error',
 which is set to the value of $! at the time of the error.
 
-=item connect
+=item accepted
 
-A new client connected to a listening socket.
+A new client connected to a listening socket and the connection was accepted by
+EventMux. The listening socket file handle is in the 'parent_fh' key.
 
-=item connected
+=item ready 
 
-A socket connected to a remote host, this can be use full when working with
+A file handle is ready to be written to, this can be use full when working with
 nonblocking connects so you know when the remote connection accepted the
 connection.
 
-=item accept
+=item accepting
 
 A new client is trying to connect to a listening socket, but the user code must
 call accept manually.  This only happens when the ManualAccept option is
@@ -195,35 +196,41 @@ set.
 
 =item read
 
-A socket has incoming data.  If the socket's LineBuffered option is set, this
-will always be a full line, including the terminating newline.  The data is
-contained in the 'data' key of the event hash.  If recv() returned a sender
-address, it is contained in the 'sender' key and must be manually unpacked
-according to the socket domain, e.g. with C<Socket::unpack_sockaddr_in()>.
+A socket has incoming data.  If the socket's Buffered option is set, this
+will be what the buffering rule define.
+
+The data is contained in the 'data' key of the event hash.  If recv() 
+returned a sender address, it is contained in the 'sender' key and must be 
+manually unpacked according to the socket domain, e.g. with 
+C<Socket::unpack_sockaddr_in()>.
 
 =item read_last
 
 A socket has incoming data that did not match the buffering rules, this can
 happen with the following buffering types: Size, FixedSize and Regexp.
 
-The Buffering types: "Split", "Disconnect" and "None".expect this and will
+The Buffering types: "Split", "Disconnect" and "None" expects this and will
 return a read instead.
 
-The default is 1, in the sense that "None" is the default buffering type, but 
-else it's off by default.
+The default is not return read_last, in the sense that "None" is the default 
+buffering type, but else it's off by default.
 
 =item sent
 
 A socket has sent all the data in it's queue to the other end.
 
-=item disconnect
+=item closing
 
-A file handle was detected to be have been disconnected by the other end or
-was the file handle was set to disconnected delayed by the user. So EventMux 
-stooped listening for events on this file handle. Data like Meta is still 
-accessible.
+A file handle was detected to be have been closed by the other end or the file 
+handle was set to be closed by the user. So EventMux stooped listening for 
+events on this file handle. Data like Meta is still accessible.
 
-=item disconnected
+The 'missing' key indicates the amount of data or packets left in the user 
+space buffer when the file handle was closed. This does not indicate the amount
+of data received by the other end, only that the user space buffer left. 
+Use for debugging only.
+
+=item closed
 
 A socket/pipe was disconnected/closed, the file descriptor, all internal 
 references, and data store with the file handle was removed.
@@ -266,11 +273,7 @@ sub _get_event {
     # actions to execute?
     while (my $action = shift @{$self->{actionq}}) {
         $action->($self);
-    }
-
-    # try after we have flushed the action queue
-    if (my $event = shift @{$self->{events}}) {
-        return $event;
+        return;
     }
 
     # timeouts to respect?
@@ -292,7 +295,6 @@ sub _get_event {
     my @result = IO::Select->select($self->{readfh}, $self->{writefh},
         undef, (!defined $timeout || $timeout > 0 ? $timeout : 0));
 
-    # FIXME: Timeout pr filehandle, why ????
     if (@result == 0) {
         if ($!) {
             return { type => 'error', error => $! };
@@ -304,25 +306,25 @@ sub _get_event {
     }
 
     #print("can_write:",int(@{$result[1]}),"\n");
-    #print("can_write:",join(",", @{$result[1]}),"\n");
+    #print("can_read:",int(@{$result[0]}),"\n");
     #system("ls -l /proc/$$/fd|wc\n");
 
     # buffers to flush?, can_write is set.
     for my $fh (@{$result[1]}) {
-        if(exists $self->{fhs}{$fh}{connected}
-            and $self->{fhs}{$fh}{connected} == 0) {
-            $self->{fhs}{$fh}{connected} = 1;
+        if(exists $self->{fhs}{$fh}{ready}
+            and $self->{fhs}{$fh}{ready} == 0) {
+            $self->{fhs}{$fh}{ready} = 1;
 
             my $packederror = getsockopt($fh, SOL_SOCKET, SO_ERROR);
             if(!defined $packederror) {
-                $self->_push_event({ type => 'connected', fh => $fh });
+                $self->_push_event({ type => 'ready', fh => $fh });
             } else {
                 my $error = unpack("i", $packederror);
                 if($error == 0) {
-                    $self->_push_event({ type => 'connected', fh => $fh });
+                    $self->_push_event({ type => 'ready', fh => $fh });
                 } else {
                     $self->_push_event({ type => 'error',
-                            fh => $fh, error=> $error });
+                        fh => $fh, error=> $error });
                 }
             }
 
@@ -331,7 +333,6 @@ sub _get_event {
 
             if ($cfg->{type} eq "dgram") {
                 $self->_send_dgram($fh);
-                print "Can Write\n";
             } else {
                 $self->_send_stream($fh);
             }
@@ -349,12 +350,13 @@ sub _get_event {
             # new connection
             if ($self->{auto_accept}) {
                 my $client = $fh->accept or next;
-                $self->_push_event({ type => 'connect', fh => $client });
+                $self->_push_event({ type => 'accepted', fh => $client,
+                        parent_fh => $fh });
                 $self->add($client, %{$self->{fhs}{$fh}{opts}}, Listen => 0);
-                # Set connected as we already sent a connect.
-                $self->{fhs}{$client}{connected} = 1;
+                # Set ready as we already sent a connect.
+                $self->{fhs}{$client}{ready} = 1;
             } else {
-                $self->_push_event({ type => 'accept', fh => $fh });
+                $self->_push_event({ type => 'accepting', fh => $fh });
             }
 
         } elsif (!$self->{fhs}{$fh}{auto_read}) {
@@ -445,6 +447,8 @@ system calls will be required to empty a file handle.
 
 =head3 Buffered
 
+FIXME: Set maximum read length on most of the buffering types.
+
 Can be a number of different buffering types, common for all of them is that
 they define when a event should be generated based on when there is enough data
 for the buffering type to be satisfied. All buffering types also generate an 
@@ -470,6 +474,11 @@ $template is reached.
 $offset is the numbers of bytes to add to the length that was unpacked with
 the $template.
 
+  $mux->add($my_fh, Buffered => ['Size', $template, $offset, $max_read_size]);
+
+$max_read_size is the maximum number of bytes to read from the file handle pr.
+event. The default is 1048576 bytes. 
+
 =item FixedSize
 
 Buffering that uses a fixed size to determine when to generate an event.
@@ -484,29 +493,50 @@ Buffering that uses a regular expressing to determine where to split data into e
 Only the data is returned not the splitter pattern itself.
 
   $mux->add($my_fh, Buffered => ['Split', $regexp]);
+  
+  or 
+
+  $mux->add($my_fh, Buffered => ['Split', $regexp, $max_read_size]);
 
 $regexp is a regular expressing that tells where the split the data.
 
 This also works as line buffering when qr/\n/ is used or for a C string with
 qr/\0/.
 
+$max_read_size is the maximum number of bytes to read from the file handle pr.
+event. The default is 1048576 bytes. 
+
 =item Regexp
 
 Buffering that uses a regular expressing to determine when there is enough data
-for an event. Only the match defined in the () is returned not the complete 
-regular expressing.
+for an event. Only the match defined in the () is returned not the complete regular expressing.
   
   $mux->add($my_fh, Buffered => ['Regexp', $regexp]);
+
+  or 
+  
+  $mux->add($my_fh, Buffered => ['Regexp', $regexp, $max_read_size]);
 
 $regexp is a regular expressing that tells what data to return.
 
 An example would be qr/^(.+)\n/ that would work as line buffing.
 
+$max_read_size is the maximum number of bytes to read from the file handle pr.
+event. The default is 1048576 bytes. 
+
 =item Disconnect
 
-Buffering that waits for the disconnect to generate an event. 
+Buffering that waits for the file handle to be closed or disconnected to 
+generate a 'read' event. 
 
   $mux->add($my_fh, Buffered => ['Disconnect']);
+    
+  or
+
+  $mux->add($my_fh, Buffered => ['Disconnect', $max_read_size]);
+
+$max_read_size is the maximum number of bytes to read from the file handle pr.
+event. The default is 1048576 bytes. 
 
 =item None
 
@@ -514,18 +544,15 @@ Disable Buffering and return data when it's received. This is the default state.
 
   $mux->add($my_fh, Buffered => ['None']);
 
+  or
+
+  $mux->add($my_fh, Buffered => ['None', $max_read_size]);
+
+
+$max_read_size is the maximum number of bytes to read from the file handle pr.
+event. The default is 1048576 bytes. 
+
 =back
-
-=head3 Priority
-
-Set the priority of the for returning event from EventMux, fh's with higher 
-priority will have their events returned first.
-
-  $mux->add($my_fh, Priority => $priority);
-
-$priority is the priority number from 0-2^31.
-
-Default Priority is 0.
 
 =head3 Meta
 
@@ -540,8 +567,10 @@ sub add {
     $self->{fhs}{$client}{buffered} = (exists $opts{Buffered} ?
         $opts{Buffered} : $self->{buffered});
 
+    # FIXME: add max_read_size
+
     # Set return_last if default for the buffering type.
-     if($self->{fhs}{$client}{buffered}[0] eq 'None' or 
+    if($self->{fhs}{$client}{buffered}[0] eq 'None' or 
         $self->{fhs}{$client}{buffered}[0] eq 'Split' or 
         $self->{fhs}{$client}{buffered}[0] eq 'Disconnect') {
         $self->{fhs}{$client}{return_last} = 1;
@@ -570,16 +599,16 @@ sub add {
     
     $self->{readfh}->add($client);
 
-    # If this is not UDP(SOCK_DGRAM) send a connected event.
+    # If this is not UDP(SOCK_DGRAM) send a ready event.
     if ((!UNIVERSAL::can($client, "socktype") 
             or ($client->socktype || 0) != SOCK_DGRAM)) {
         #FIXME Only works on IO::Socket, change to use a socktype that works for
         # all kind of filehandles.
 
-        # Add to find out when to send connected event.
+        # Add to find out when to send ready event.
         if (!$opts{Listen}) {
             $self->{writefh}->add($client);
-            $self->{fhs}{$client}{connected} = 0;
+            $self->{fhs}{$client}{ready} = 0;
         }
     
     } else {
@@ -643,131 +672,83 @@ sub remove {
     delete $self->{fhs}{$fh};
 }
 
-=head2 B<disconnect($fh, [ %options ])>
 
-Close a file handle.  File handles managed by EventMux must be closed through
+=head2 B<close($fh)>
+
+Close a file handle. File handles managed by EventMux must be closed through
 this method to make sure all resources are freed.
 
-  $mux->disconnect($fh);
-
-  or 
-
-  $mux->disconnect($fh, DelayedBy=>'none');
-
-If the DelayedBy options is not used only the current content of the in buffer
-will be returned to the user. Any data in the out buffer will be lost.
-
-=head3 DelayedBy
-
-It possible to delay a user invoked disconnect so IO::EventMux has a chance to
-empty it's buffers or file handle in a controlled manner. If Delayed is used 
-an 'disconnect' event will be returned by mux() before actually closing the 
-file handle. IO::EventMux will also keep meta data associated with the file 
-handle until the final 'disconnected' event is returned.
-
-There are four different modes of delayed disconnect. All have in common that
-the 'disconnect' event will be returned and that meta data lives on with that.
-
-NOTE: Listening file handles will always be closed instantly and ignores this
-option.
-
-=over 2
-
-=item write
 IO::EventMux will delay closing the file handle until the out buffer is empty.
-and will stop listening on read event on that socket.
+and will stop listening on read event on that socket. And will never generate
+any more read events.
 
-=item read
-IO::EventMux will delay closing the socket as long as it can read data from
-the file handle without it blocking. But will stop listing for write events
-for this file handle and also clear the out buffer.
+IO::EventMux will also keep meta data associated with the file 
+handle until the final 'closed' event is returned.
 
-Using this mode can be a bit dangerous as you never know how quickly the other
-end will send your data. So it's very easy to not get everything with this mode.
-
-It recommended that you always try to disconnect when you know you have gotten
-all the data.
-
-=item both
-Using this implies that both the write and read condition has to met before
-IO::EventMux will close the socket.
-
-=item none
-Stop listening for both read and write event on the file file handle and return
-the 'read_last' event with the remaining part of the buffer.
-
-=back
+Generates a closing and a closed event.
 
 =cut
 
-sub disconnect {
-    my ($self, $fh, %options) = @_;
+sub close {
+    my ($self, $fh) = @_;
 
     return undef if $self->{fhs}{$fh}{disconnecting};
     $self->{fhs}{$fh}{disconnecting} = 1;
-   
+    
     if(exists $self->{listenfh}{$fh}) {
         delete $self->{listenfh}{$fh};
-        $self->close_fh($fh);
-        $self->_push_event({ type => 'disconnected', fh => $fh });
+        $self->_push_event({ type => 'closing', fh => $fh });
+        
+        # wait with the close so a valid file handle can be returned
+        push @{$self->{actionq}}, sub {
+            $self->_push_event({ type => 'closed', fh => $fh });
+            $self->_close_fh($fh);
+        };
     
-    } elsif(exists $options{DelayedBy}) {
+    } else {
+        $self->_read_all($fh);
         
-        if($options{DelayedBy} eq 'both') {
-            $self->{fhs}{$fh}{delayed_read} = 1;
-            $self->{fhs}{$fh}{delayed_write} = 1;
-        
-        } elsif($options{DelayedBy} eq 'read') {
+        if($self->buflen($fh) == 0) {
             $self->{writefh}->remove($fh);
-            $self->{fhs}{$fh}{delayed_read} = 1;
-
-        } elsif($options{DelayedBy} eq 'write') {
-            $self->{readfh}->remove($fh);
-            $self->{fhs}{$fh}{delayed_write} = 1;
-        
-        } elsif($options{DelayedBy} eq 'none') {
-            $self->{readfh}->remove($fh);
-            $self->{writefh}->remove($fh);
-
+            $self->_push_event({ type => 'closing', fh => $fh });
+                        
             # wait with the close so a valid file handle can be returned
             push @{$self->{actionq}}, sub {
-                $self->close_fh($fh);
-                # FIXME: Return the number of { missing => bytes } to send. 
-                $self->_push_event({ type => 'disconnected', fh => $fh });
+                $self->kill($fh);
             };
-        
-        } else {
-            croak "Unknown DelayedBy type: $options{DelayedBy}";
         }
-
-        # Return the leftovers from the in buffer to the user.
-        $self->_read_all($fh);
-        $self->_push_event({ type => 'disconnect', fh => $fh });
-
-    } else {
-        $self->{readfh}->remove($fh);
-        $self->{writefh}->remove($fh);
-        $self->_read_all($fh);
-        $self->close_fh($fh);
-        # FIXME: Return the number of { missing => bytes } to send. 
-        $self->_push_event({ type => 'disconnected', fh => $fh });
     }
+    
+    $self->{readfh}->remove($fh);
 }
 
-=head2 B<close_fh($fh)>
+=head2 B<kill($fh)>
 
-Force the file handle to be closed. I<Must only> be called after a "disconnect"
-event has been received from C<mux()>.
+FIXME: Write some more.
+Returns a 'closed' event and delete all buffers. Does not return the 
+'read_last' event.
 
 =cut
 
-sub close_fh {
+sub kill {
+    my ($self, $fh) = @_;
+
+    $self->{readfh}->remove($fh);
+    $self->{writefh}->remove($fh);
+
+    $self->_push_event({ type => 'closed', fh => $fh, 
+            missing => $self->buflen($fh) });
+    
+    $self->_close_fh($fh);
+}
+
+sub _close_fh {
     my ($self, $fh) = @_;
 
     if ($self->{fhs}{$fh}) {
         delete $self->{fhs}{$fh};
         shutdown $fh, 2;
-        close $fh or warn "closing $fh: $!";
+        CORE::close $fh or warn "closing $fh: $!";
     }
 }
 
@@ -900,7 +881,6 @@ sub _send_dgram {
 
         if (!defined $rv) {
             if ($! == POSIX::EWOULDBLOCK) {
-                print "WOULDBLOCK\n";
                 # retry later
                 unshift @{$cfg->{outbuffer}}, $queue_item;
                 return $packets_sent;
@@ -911,7 +891,7 @@ sub _send_dgram {
             return undef;
 
         } elsif ($rv < length $data) {
-            cluck "Incomplete datagram sent (should not happen)";
+            die "Incomplete datagram sent (should not happen)";
 
         } else {
             # all pending data was sent
@@ -919,8 +899,18 @@ sub _send_dgram {
         }
     }
     
+    
     $self->_push_event({type => 'sent', fh => $fh});
     $self->{writefh}->remove($fh);
+    
+    if($self->{fhs}{$fh}{disconnecting}) {
+        $self->_push_event({ type => 'closing', fh => $fh });
+                        
+        # wait with the close so a valid file handle can be returned
+        push @{$self->{actionq}}, sub {
+            $self->kill($fh);
+        };
+    }
 
     return $packets_sent;
 }
@@ -957,7 +947,7 @@ sub _send_stream {
 
     } elsif ($rv < length $cfg->{outbuffer}) {
         # only part of the data was sent
-        substr($cfg->{outbuffer}, $rv) = '';
+        substr($cfg->{outbuffer}, 0, $rv) = '';
         $self->{writefh}->add($fh);
         
     } else {
@@ -965,6 +955,15 @@ sub _send_stream {
         $cfg->{outbuffer} = '';
         $self->_push_event({type => 'sent', fh => $fh});
         $self->{writefh}->remove($fh);
+
+        if($self->{fhs}{$fh}{disconnecting}) {
+            $self->_push_event({ type => 'closing', fh => $fh });
+                        
+            # wait with the close so a valid file handle can be returned
+            push @{$self->{actionq}}, sub {
+                $self->kill($fh);
+            };
+        }
     }
 
     return $rv;
@@ -1009,6 +1008,7 @@ sub _read_all {
     my ($self, $fh) = @_;
     my $cfg = $self->{fhs}{$fh};
     my $canread = -1;
+    my $disconnected = 0;
 
     if($self->{readprioritytype}[0] eq 'FairByEvent') {
         $canread = $self->{readprioritytype}[1]; 
@@ -1018,7 +1018,11 @@ sub _read_all {
     my $eventcount = int(@{$self->{events}}); 
     EVENT: while (int(@{$self->{events}}) > $eventcount or $canread) {
         my ($sender);
-        
+
+        # FIXME: implement maximum read length from diffrent buffering types,
+        # Size/FixedSize($size) or All other types($max_read_size)
+        # default length should be 1048576.
+
         # $canread is 0 only when we would have blocked or found a disconnect.
         READ: while($canread-- != 0) {
             my ($data, $rv) = ('');
@@ -1035,23 +1039,14 @@ sub _read_all {
                             fh => $fh });
                 }
                 $canread = 0;
-
-                if($cfg->{delayed_read}) {
-                    $self->{readfh}->remove($fh);
-                }
-
                 last READ;
             }
 
             if (length $data == 0 and $cfg->{type} eq "stream") {
                 # client disconnected
-                $self->disconnect($fh, DelayedBy=>'none');
+                $disconnected = 1;
+
                 $canread = 0;
-
-                if($cfg->{delayed_read}) {
-                    $self->{readfh}->remove($fh);
-                }
-
                 last READ;
             }
 
@@ -1137,9 +1132,17 @@ sub _read_all {
             die("Unknown Buffered type: $buffertype");
         }
 
+        if ($self->{readprioritytype}[0] eq 'FairByEvent' 
+                and int(@{$self->{events}}) > $eventcount) {
+            last EVENT;
+        }
+
+        $eventcount = int(@{$self->{events}});
+    }
+
+    if($disconnected or $self->{fhs}{$fh}{disconnecting}) {
         # Return the last bit of buffer to the user when we get a disconnect.
-        if($cfg->{disconnecting} and length($cfg->{inbuffer}) > 0
-            and ($canread == 0 or !$cfg->{delayed_read})) {
+        if(length($cfg->{inbuffer}) > 0) {
             if($cfg->{return_last}) {
                 $self->_push_event({ type => 'read', fh => $fh, 
                         data => $cfg->{inbuffer}});
@@ -1148,40 +1151,32 @@ sub _read_all {
                         data => $cfg->{inbuffer}});
             }
             $cfg->{inbuffer} = '';
-        } 
-
-        if ($self->{readprioritytype}[0] eq 'FairByEvent' 
-                and int(@{$self->{events}}) > $eventcount) {
-            last EVENT;
         }
 
-        $eventcount = int(@{$self->{events}});
-    }
-    
-    # Disconnect if there is no more to read.
-    if($cfg->{delayed_read} and $canread == 0) {
-        push @{$self->{actionq}}, sub {
-            $self->close_fh($fh);
-            # FIXME: Return the number of { missing => bytes } to send. 
-            $self->_push_event({ type => 'disconnected', fh => $fh });
-        };
-    }
+        if($disconnected) {
+            $self->_push_event({ type => 'closing', fh => $fh });
 
+            # wait with the close so a valid file handle can be returned
+            push @{$self->{actionq}}, sub {
+                $self->kill($fh);
+            };
+        }
+    }
 }
 
 1;
 
 =head1 AUTHOR
 
-Jonas Jensen <jonas@infopro.dk>, Troels Liebe Bentsen <troels@infopro.dk>
+Jonas Jensen <jonas@infopro.dk>
+
+Troels Liebe Bentsen <troels@infopro.dk>
 
 =cut
 
 =head1 COPYRIGHT AND LICENCE
 
-Copyright (C) 2006 Troels Liebe Bentsen
-
-Copyright (C) 2006 Jonas Jensen
+Copyright 2006: Troels Liebe Bentsen, Jonas Jensen
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

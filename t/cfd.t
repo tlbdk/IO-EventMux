@@ -55,14 +55,14 @@ while(1) {
 
     print "$fh $type: $data\n";
 
-    if($type eq 'connected') {
+    if($type eq 'ready') {
     
-    } elsif($type eq 'connect') {
+    } elsif($type eq 'accepted') {
         $connecter = $fh;
 
-    } elsif($type eq 'disconnect') {
+    } elsif($type eq 'closing') {
 
-    } elsif($type eq 'disconnected') {
+    } elsif($type eq 'closed') {
         $disconnected_fhs{$fh} = 1;
         if(keys %disconnected_fhs == 2) { last; }
 
@@ -94,7 +94,7 @@ while(1) {
             "Timeout difference was not to long: 1 >= ".(time-$time-$timeout));
         ok(time-$time-$timeout >= 0, 
             "Timeout difference was not to short: 0 <= ".(time-$time-$timeout));
-        $mux->disconnect($talker, DelayedBy=>'none');
+        $mux->close($talker);
     
     } else {
         die("Unhandled event $type");

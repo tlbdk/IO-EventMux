@@ -22,7 +22,7 @@ use warnings;
 #
 my $WITHOLD = 0;
 
-use Test::More tests => 1;
+use Test::More tests => 2;
 use IO::EventMux;
 
 my $PORT = 7007;
@@ -53,6 +53,7 @@ my $talker = IO::Socket::INET->new(
 print "talker:$talker\n";
 $mux->add($talker);
 $mux->send($talker, ("data 1\n", "data 2\n", "data 3"));
+$mux->close($talker);
 
 my $timeout = 0;
 my $clients = 0;
@@ -66,24 +67,24 @@ while(1) {
     print("$fh $type: '$data'\n");
     push(@eventorder, $type);
 
-    if($type eq 'connected') {
+    if($type eq 'ready') {
         $clients++;
     
-    } elsif($type eq 'connect') {
+    } elsif($type eq 'accepted') {
         $clients++;
         $timeout = 1;
     
-    } elsif($type eq 'disconnect') {
+    } elsif($type eq 'closing') {
 
-    } elsif($type eq 'disconnected') {
+    } elsif($type eq 'closed') {
         if(--$clients == 0 and $timeout > 0) { last }
+        ok($event->{missing} == 0, "Missing is 0 as it should be")
 
     } elsif($type eq 'read') {
 
     } elsif($type eq 'read_last') {
     
     } elsif($type eq 'sent' and $fh eq $talker) {
-        $mux->disconnect($talker);
 
     } elsif($type eq 'timeout') {
     
@@ -93,5 +94,5 @@ while(1) {
 }
 
 is_deeply(\@eventorder, 
-    [qw(connected connect sent disconnected read read read_last 
-    disconnect disconnected)], "Event order is correct");
+    [qw(ready accepted sent closing closed read read read_last 
+    closing closed)], "Event order is correct");
