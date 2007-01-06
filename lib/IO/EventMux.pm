@@ -6,7 +6,8 @@ our $VERSION = "1.00";
 #
 #   * Buffering and UDP, how do we do that, we need to make a inbuffer, pr.
 #     sender???
-#
+#   * Error Handling, be constant: return error_nr and error_str or something
+#   like that. Check for "Connection refused" etc.
 
 =head1 NAME
 
