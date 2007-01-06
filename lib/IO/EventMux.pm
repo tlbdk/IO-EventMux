@@ -297,7 +297,7 @@ sub _get_event {
 
     if (@result == 0) {
         if ($!) {
-            return { type => 'error', error => $! };
+            return { type => 'error', error => "get_event:$!" };
         } elsif ($timeout_fh) {
             return { type => 'timeout', fh => $timeout_fh };
         } else {
@@ -324,7 +324,7 @@ sub _get_event {
                     $self->_push_event({ type => 'ready', fh => $fh });
                 } else {
                     $self->_push_event({ type => 'error',
-                        fh => $fh, error=> $error });
+                        fh => $fh, error=> "get_event:$error" });
                 }
             }
 
@@ -883,7 +883,7 @@ sub _send_dgram {
                 unshift @{$cfg->{outbuffer}}, $queue_item;
                 return $packets_sent;
             } else {
-                $self->_push_event({ type => 'error', error => $!, 
+                $self->_push_event({ type => 'error', error => "send_dgram:$!", 
                     fh => $fh });
             }
             return undef;
@@ -932,14 +932,14 @@ sub _send_stream {
             return undef;
         
         } else {
-            $self->_push_event({ type => 'error', error => $!, 
+            $self->_push_event({ type => 'error', error => "send_stream:$!", 
                 fh => $fh });
         }
         
         return undef;
 
     } elsif ($rv < 0) {
-        $self->_push_event({ type => 'error', error => $!, 
+        $self->_push_event({ type => 'error', error => "send_stream:$!", 
             fh => $fh });
         return undef;
 
@@ -1033,8 +1033,8 @@ sub _read_all {
 
             if (not defined $rv) {
                 if ($! != POSIX::EWOULDBLOCK) {
-                    $self->_push_event({ type => 'error', error => $!, 
-                            fh => $fh });
+                    $self->_push_event({ type => 'error', 
+                            error => "read_all:$!", fh => $fh });
                 }
                 $canread = 0;
                 last READ;
