@@ -561,7 +561,7 @@ manipulated later with meta()
 
 sub add {
     my ($self, $client, %opts) = @_;
-    
+
     $self->{fhs}{$client}{buffered} = (exists $opts{Buffered} ?
         $opts{Buffered} : $self->{buffered});
 
