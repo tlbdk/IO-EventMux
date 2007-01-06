@@ -375,8 +375,6 @@ sub _get_event {
 Add a socket to the internal list of handles being watched.  If one of the
 current listening sockets is given here, accept will be called on it.
 
-To add a new listening socket, use C<add_listener()> instead.
-
 The optional parameters for the handle will be taken from the IO::EventMux
 object if not given here:
 
