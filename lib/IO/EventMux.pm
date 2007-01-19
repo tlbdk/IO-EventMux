@@ -298,7 +298,7 @@ sub _get_event {
 
     if (@result == 0) {
         if ($!) {
-            return { type => 'error', error => "get_event:$!" };
+            return { type => 'error', error => "get_event(select):$!" };
         } elsif ($timeout_fh) {
             return { type => 'timeout', fh => $timeout_fh };
         } else {
@@ -325,7 +325,7 @@ sub _get_event {
                     $self->_push_event({ type => 'ready', fh => $fh });
                 } else {
                     $self->_push_event({ type => 'error',
-                        fh => $fh, error=> "get_event:$error" });
+                        fh => $fh, error=> "get_event(can_write):$error:" });
                 }
             }
 
