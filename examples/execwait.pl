@@ -8,8 +8,7 @@ use strict;
 # prevent it from becoming a zombie. This call to waitpid is blocking in
 # theory, but it will happen instantly for well-behaved children.
 
-use FindBin qw($Bin);
-use lib "$Bin/../../trunk/backend";
+use lib "lib";
 use IO::EventMux;
 
 my $mux = IO::EventMux->new;
@@ -33,9 +32,13 @@ if ($pid == 0) {
 close $writerOUT;
 close $writerERR;
 close $readerIN;
-$mux->add($readerOUT, LineBuffered => 1);
-$mux->add($readerERR, LineBuffered => 1);
-$mux->add($writerIN, LineBuffered => 0);
+$mux->add($readerOUT, Buffered => ["Split", qr/\n/]);
+$mux->add($readerERR, Buffered => ["Split", qr/\n/]);
+$mux->add($writerIN, Buffered => ["Split", qr/\n/]);
+
+print "OUT($readerOUT)\n";
+print "ERR($readerERR)\n";
+print "IN($writerIN)\n";
 
 my $dataIN = "hello\n" x 1;
 my $dataOUT = '';
@@ -43,23 +46,22 @@ my $dataERR = '';
 
 my $closed = 0;
 while (my $event = $mux->mux) {
-    print "Got event: $event->{type}\n";
+    print "Got event: $event->{type} : $event->{fh} \n";
 
-    if ($event->{type} eq "connected" and ($event->{fh} == $writerIN)) {
+    if ($event->{type} eq "ready" and ($event->{fh} == $writerIN)) {
         $mux->send($event->{fh}, $dataIN);
 
     } elsif ($event->{type} eq "read" and ($event->{fh} == $readerOUT)) {
         $dataOUT .= $event->{data};
-        
-        if(length($dataIN) == length($dataOUT)) {
-            $mux->disconnect($writerIN);
+        if(length($dataIN)-1 == length($dataOUT)) {
+            $mux->kill($writerIN);
         }
     
     } elsif ($event->{type} eq "read" and ($event->{fh} == $readerERR)) {
         $dataERR .= $event->{data};
     
-    } elsif ($event->{type} eq "disconnect" and ($event->{fh} == $readerOUT)) {
-        print "OUT:$dataOUT";
+    } elsif ($event->{type} eq "closed" and ($event->{fh} == $readerOUT)) {
+        print "OUT:$dataOUT\n";
 
         if($closed++) {
             waitpid $pid, 0;
@@ -67,8 +69,8 @@ while (my $event = $mux->mux) {
             last;
         }
     
-    } elsif ($event->{type} eq "disconnect" and ($event->{fh} == $readerERR)) {
-        print "OUT:$dataERR";
+    } elsif ($event->{type} eq "closed" and ($event->{fh} == $readerERR)) {
+        print "ERR:$dataERR\n";
         
         if($closed++) {
             waitpid $pid, 0;
