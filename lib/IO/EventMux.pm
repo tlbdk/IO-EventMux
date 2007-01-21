@@ -50,7 +50,8 @@ use IO::Socket;
 use Socket;
 use Carp qw(carp cluck croak);
 use Fcntl;
-use POSIX qw(EWOULDBLOCK ENOTCONN EAGAIN F_GETFL F_SETFL O_NONBLOCK);
+use POSIX qw(EWOULDBLOCK ECONNREFUSED ENOTCONN EAGAIN F_GETFL F_SETFL 
+O_NONBLOCK ETIMEDOUT ECONNRESET);
 
 =head2 B<new([%options])>
 
@@ -324,8 +325,18 @@ sub _get_event {
                 if($error == 0) {
                     $self->_push_event({ type => 'ready', fh => $fh });
                 } else {
+                    my $str = "Uknown error code: $error";
+                    
+                    if($error == ECONNREFUSED) {
+                        $str = "Connection refused";
+                    } elsif($error == ETIMEDOUT) {
+                        $str = "Connection timed out";
+                    } elsif($error == ECONNRESET) {
+                        $str = "Connection reset by peer";
+                    }
+                    
                     $self->_push_event({ type => 'error',
-                        fh => $fh, error=> "get_event(can_write):$error:" });
+                        fh => $fh, error=> "get_event(can_write):$str" });
                 }
             }
 
