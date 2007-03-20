@@ -1,12 +1,12 @@
 Build.PL
+examples/execwait.pl
 lib/IO/EventMux.pm
 MANIFEST
 t/cfd.t
-t/dgram-send.t
-t/disconnect-delayed-read.t
 t/disconnect-delayed-write.t
 t/disconnect.t
 t/fairness-by-event.t
 t/pod-coverage.t
 t/pod.t
-META.yml
+t/socket-send-error-2.6.19.t
+t/tcp-send-accept-test.t
