@@ -1112,7 +1112,7 @@ sub _read_all {
         } elsif($buffertype eq 'Split') {
             my ($regexp) = (@args);
 
-            while ($cfg->{inbuffer} =~ s/(.*)$regexp//) {
+            while ($cfg->{inbuffer} =~ s/(.*?)$regexp//) {
                 if($1 ne '') {
                     my %copy = %event;
                     $copy{'data'} = $1;
