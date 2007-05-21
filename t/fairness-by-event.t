@@ -15,9 +15,9 @@ sub create_writer {
     my $pid = fork;
     if ($pid == 0) {
         close $readerOUT or die;
-        open STDOUT, ">&", $writerOUT or die;
-        exec "sh", "-c", "echo \"$data\"; sleep 1;";
-        die;
+        print {$writerOUT} $data;
+       	sleep 1; 
+	exit;
     }
 
     close $writerOUT;
