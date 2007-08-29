@@ -566,13 +566,20 @@ sub add {
     $self->{fhs}{$client}{buffered} = (exists $opts{Buffered} ?
         $opts{Buffered} : $self->{buffered});
 
-    # FIXME: add max_read_size
-
     # Set return_last if default for the buffering type.
     if($self->{fhs}{$client}{buffered}[0] eq 'None' or 
         $self->{fhs}{$client}{buffered}[0] eq 'Split' or 
         $self->{fhs}{$client}{buffered}[0] eq 'Disconnect') {
         $self->{fhs}{$client}{return_last} = 1;
+    }
+
+    if ($self->{fhs}{$client}{buffered}[0] =~ /^Split|Regexp$/) {
+        if (@{$self->{fhs}{$client}{buffered}} < 3) {
+            $self->{fhs}{$client}{max_read_size} = 1048576;
+        } else {
+            (undef, undef, $self->{fhs}{$client}{max_read_size}) =
+                @{$self->{fhs}{$client}{buffered}};
+        }
     }
 
     $self->{fhs}{$client}{auto_accept} = (exists $opts{ManualAccept} ?
@@ -1017,18 +1024,26 @@ sub _read_all {
     EVENT: while (int(@{$self->{events}}) > $eventcount or $canread) {
         my ($sender);
 
-        # FIXME: implement maximum read length from diffrent buffering types,
-        # Size/FixedSize($size) or All other types($max_read_size)
-        # default length should be 1048576.
-
         # $canread is 0 only when we would have blocked or found a disconnect.
         READ: while($canread-- != 0) {
+            my $read_size = $cfg->{read_size};
+            if ($cfg->{max_read_size}) {
+                my $buf_space = $cfg->{max_read_size} - length $cfg->{inbuffer};
+                if ($buf_space < $read_size) {
+                    $read_size = $buf_space;
+                }
+                if ($read_size <= 0) {
+                    $canread = 0;
+                    last READ;
+                }
+            }
+
             my ($data, $rv) = ('');
             if (UNIVERSAL::can($fh, "recv") and !$fh->isa("IO::Socket::SSL")) {
-                $rv = $fh->recv($data, $cfg->{read_size}, 0);
+                $rv = $fh->recv($data, $read_size, 0);
                 $sender = $rv if defined $rv && $rv ne "";
             } else {
-                $rv = sysread $fh, $data, $cfg->{read_size};
+                $rv = sysread $fh, $data, $read_size;
             }
 
             if (not defined $rv) {
@@ -1136,6 +1151,14 @@ sub _read_all {
         }
 
         $eventcount = int(@{$self->{events}});
+    }
+
+    if ($cfg->{max_read_size}
+            and length $cfg->{inbuffer} >= $cfg->{max_read_size}) {
+        $self->_push_event({ type => 'error', fh => $fh, 
+                error => "Buffer size exceeded"});
+        $cfg->{return_last} = 0; # last chunk is incomplete
+        $disconnected = 1;
     }
 
     if($disconnected or $self->{fhs}{$fh}{disconnecting}) {
