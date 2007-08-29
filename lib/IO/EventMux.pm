@@ -6,8 +6,6 @@ our $VERSION = "1.00";
 #
 #   * Buffering and UDP, how do we do that, we need to make a inbuffer, pr.
 #     sender???
-#   * Error Handling, be constant: return error_nr and error_str or something
-#   like that. Check for "Connection refused" etc.
 
 =head1 NAME
 
@@ -74,7 +72,7 @@ The default is C<'FairByEvent'>.
 
 File handles change turn generating events and gets the minimum of number of 
 reads for generating one event, but if the data returned can be used to 
-generate more events all events will be pushed to the queue to be returned 
+generate more events. All events will be pushed to the queue to be returned 
 with the C<mux()> call.
 
   my $mux = IO::EventMux->new( PriorityType => ['FairByEvent'] );
@@ -177,7 +175,8 @@ Nothing happened and timeout occurred.
 =item error
 
 The C<select()> system call failed. The event hash will have the key 'error',
-which is set to the value of $! at the time of the error.
+which is set to the value of $! at the time of the error. Use kill() on the
+file handle to make the error be handled like a normal "closed" event.
 
 =item accepted
 
@@ -208,29 +207,31 @@ C<Socket::unpack_sockaddr_in()>.
 
 =item read_last
 
-A socket has incoming data that did not match the buffering rules, this can
-happen with the following buffering types: Size, FixedSize and Regexp.
+A socket last data before it was closed did not match the buffering rules, this
+can happen with the following buffering types: Size, FixedSize and Regexp. And
+is generally an indicator that you received data that you did not expect.
 
 The Buffering types: "Split", "Disconnect" and "None" expects this and will
 return a read instead.
 
-The default is not return read_last, in the sense that "None" is the default 
-buffering type, but else it's off by default.
+The default is not to return read_last, in the sense that "None" is the default 
+buffering type.
 
 =item sent
 
-A socket has sent all the data in it's queue to the other end.
+A socket has sent all the data in it's queue with the send call. This however
+does not indicate that the data has reached the other end, normally only that
+the data has reached the local buffer of the kernel.
 
 =item closing
 
 A file handle was detected to be have been closed by the other end or the file 
 handle was set to be closed by the user. So EventMux stooped listening for 
-events on this file handle. Data like Meta is still accessible.
+events on this file handle. Event data like 'Meta' is still accessible.
 
 The 'missing' key indicates the amount of data or packets left in the user 
 space buffer when the file handle was closed. This does not indicate the amount
 of data received by the other end, only that the user space buffer left. 
-Use for debugging only.
 
 =item closed
 
@@ -384,8 +385,7 @@ sub _get_event {
 
 =head2 B<add($handle, [ %options ])>
 
-Add a socket to the internal list of handles being watched.  If one of the
-current listening sockets is given here, accept will be called on it.
+Add a socket to the internal list of handles being watched.
 
 The optional parameters for the handle will be taken from the IO::EventMux
 object if not given here:
@@ -438,7 +438,7 @@ socket to nonblocking.
 
 By default EventMux will handle nonblocking reading and generate a read event
 with the data, but if some reason you would like to do the reading yourself 
-you can EventMux not to generate a 'can_read' event for you instead.
+you can have EventMux generate a 'can_read' event for you instead.
     
   $mux->add($my_fh, ManualRead => 1);
 
@@ -457,12 +457,14 @@ system calls will be required to empty a file handle.
 
 =head3 Buffered
 
-FIXME: Set maximum read length on most of the buffering types.
-
 Can be a number of different buffering types, common for all of them is that
 they define when a event should be generated based on when there is enough data
 for the buffering type to be satisfied. All buffering types also generate an 
 event with the remaining data when there is a disconnect.
+
+As a protection against a hostile remote end filling your memory a $max_read_size
+is defined for most of buffering types, this defines the maximum amount of data
+to read from a file handle before generating an event.
 
 The default buffering type is C<'None'>
 
@@ -487,7 +489,10 @@ the $template.
   $mux->add($my_fh, Buffered => ['Size', $template, $offset, $max_read_size]);
 
 $max_read_size is the maximum number of bytes to read from the file handle pr.
-event. The default is 1048576 bytes. 
+event. The default is 1048576 bytes.
+
+If the size read from the template is bigger than $max_read_size an error event
+will be generated and only $max_read_size will be read from the socket.
 
 =item FixedSize
 
@@ -516,6 +521,10 @@ qr/\0/.
 $max_read_size is the maximum number of bytes to read from the file handle pr.
 event. The default is 1048576 bytes. 
 
+If no match has been reach after matching $max_read_size of data from the
+buffer a error event will be generated and the $max_read_size of data will be
+returned in a data event.
+
 =item Regexp
 
 Buffering that uses a regular expressing to determine when there is enough data
@@ -534,6 +543,10 @@ An example would be qr/^(.+)\n/ that would work as line buffing.
 $max_read_size is the maximum number of bytes to read from the file handle pr.
 event. The default is 1048576 bytes. 
 
+If no match has been reach after matching $max_read_size of data from the
+buffer a error event will be generated and the $max_read_size of data will be
+returned in a data event.
+
 =item Disconnect
 
 Buffering that waits for the file handle to be closed or disconnected to 
@@ -547,6 +560,10 @@ generate a 'read' event.
 
 $max_read_size is the maximum number of bytes to read from the file handle pr.
 event. The default is 1048576 bytes. 
+
+If more data than $max_read_size if received before the file handle is closed or
+disconnected, an error event will be generated and $max_read_size of data will
+be returned in a data event.
 
 =item None
 
@@ -688,14 +705,12 @@ sub remove {
 Close a file handle. File handles managed by EventMux must be closed through
 this method to make sure all resources are freed.
 
-IO::EventMux will delay closing the file handle until the out buffer is empty.
-and will stop listening on read event on that socket. And will never generate
-any more read events.
+IO::EventMux will delay closing the file handle until the out buffer is empty 
+and at the same time stop listening on read event on that socket. This in turn 
+will also generate a 'closing' and a 'closed' event.
 
-IO::EventMux will also keep meta data associated with the file 
-handle until the final 'closed' event is returned.
-
-Generates a closing and a closed event.
+Note: All meta data associated with the file handle will be kept until the 
+final 'closed' event is returned.
 
 =cut
 
@@ -734,9 +749,10 @@ sub close {
 
 =head2 B<kill($fh)>
 
-FIXME: Write some more.
-Returns a 'closed' event and delete all buffers. Does not return the 
-'read_last' event.
+Closes a file handle without giving time to finish any outstanding operations. 
+Returns a 'closed' event, delete all buffers and does not keep 'Meta' data.
+
+Note: Does not return the 'read_last' event.
 
 =cut
 
