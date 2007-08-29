@@ -2,11 +2,6 @@ package IO::EventMux;
 
 our $VERSION = "1.00";
 
-#FIXME:
-#
-#   * Buffering and UDP, how do we do that, we need to make a inbuffer, pr.
-#     sender???
-
 =head1 NAME
 
 IO::EventMux - Multiplexer for sockets, pipes and any other types of
@@ -75,11 +70,12 @@ reads for generating one event, but if the data returned can be used to
 generate more events. All events will be pushed to the queue to be returned 
 with the C<mux()> call.
 
-  my $mux = IO::EventMux->new( PriorityType => ['FairByEvent'] );
+  my $mux = IO::EventMux->new( ReadPriorityType => ['FairByEvent'] );
 
   or
 
-  my $mux = IO::EventMux->new( PriorityType => ['FairByEvent', $reads_pr_turn] );
+  my $mux = IO::EventMux->new( ReadPriorityType => ['FairByEvent',
+                                                    $reads_pr_turn] );
 
 $reads_pr_turn is the number of reads the file handle gets to generate an event.
 
@@ -92,27 +88,10 @@ allow file handles returning allot of events to monopolize the event loop. This
 also allow the other end of the file handle to fill the memory of the host as
 EventMux will continue reading so long there is data on the file handle.
 
-  my $mux = IO::EventMux->new( PriorityType => ['None'] );
+  my $mux = IO::EventMux->new( ReadPriorityType => ['None'] );
 
-Use this PriorityType with care and only on trusted sources as it's very easy to
-exploit.
-
-=back
-
-=head3 WritePriorityType
-
-The WritePriorityType defines how writes should be sent to the sockets. 
-
-The default is C<'None'>.
-
-=over 2
-
-=item None
-FIXME: Write description.
-
-=item FairByWrite
-
-FIXME: Write description and implement.
+Use this ReadPriorityType with care and only on trusted sources as it's very
+easy to exploit.
 
 =back
 
@@ -121,14 +100,10 @@ FIXME: Write description and implement.
 sub new {
     my ($class, %opts) = @_;
     
-    # FIXME: The whole options system is a ugly hack and needs to be fixed but
+    # TODO: The whole options system is a ugly hack and needs to be fixed but
     # until then this is how we set the defaults.
     if(exists $opts{ReadPriorityType} and @{$opts{ReadPriorityType}} == 1) {
         push(@{$opts{ReadPriorityType}}, 10);
-    }
-
-    if(exists $opts{WritePriorityType} and @{$opts{WritePriorityType}} == 1) {
-        push(@{$opts{WritePriorityType}}, 10);
     }
 
     bless {
@@ -136,9 +111,6 @@ sub new {
         readprioritytype  => (exists $opts{ReadPriorityType} ? 
             $opts{ReadPriorityType} :
             ['FairByEvent', 10]),
-        writeprioritytype  => (exists $opts{WritePriorityType} ? 
-            $opts{WritePriorityType} :
-            ['FairByWrite', 1]),
         auto_accept   => 1,
         auto_write    => 1,
         auto_read     => 1,
@@ -629,7 +601,7 @@ sub add {
     # If this is not UDP(SOCK_DGRAM) send a ready event.
     if ((!UNIVERSAL::can($client, "socktype") 
             or ($client->socktype || 0) != SOCK_DGRAM)) {
-        #FIXME Only works on IO::Socket, change to use a socktype that works for
+        #TODO Only works on IO::Socket, change to use a socktype that works for
         # all kind of filehandles.
 
         # Add to find out when to send ready event.
