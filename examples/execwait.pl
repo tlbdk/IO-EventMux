@@ -25,7 +25,7 @@ if ($pid == 0) {
     open STDOUT, ">&", $writerOUT or die;
     open STDERR, ">&", $writerERR or die;
     open STDIN, ">&", $readerIN or die;
-    exec "sh", "-c", q(strace -e trace=write cat && sleep 1);
+    exec "sh", "-c", q(cat);
     die;
 }
 
@@ -77,7 +77,6 @@ while (my $event = $mux->mux) {
             print "Exit status: $?\n";
             last;
         }
-    
     }
 }
 
