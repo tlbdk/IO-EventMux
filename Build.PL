@@ -8,6 +8,7 @@ my $builder = Module::Build->new(
     dist_author       => 'Jonas Jensen <jonas@infopro.dk>'
                         .',Troels Liebe Bentsen <troels@infopro.dk>',
     dist_version_from => 'lib/IO/EventMux.pm',
+    create_readme     => 1,
     build_requires => {
         'Test::More' => 0,
     },

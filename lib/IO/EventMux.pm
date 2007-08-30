@@ -1,6 +1,8 @@
 package IO::EventMux;
+use strict;
+use warnings;
 
-our $VERSION = "1.00";
+our $VERSION = '1.00';
 
 =head1 NAME
 
@@ -34,9 +36,6 @@ objects (preferred).
 =head1 METHODS
 
 =cut
-
-use strict;
-use warnings;
 
 use IO::Select;
 use IO::Socket;
@@ -1192,8 +1191,6 @@ sub _read_all {
 Jonas Jensen <jonas@infopro.dk>
 
 Troels Liebe Bentsen <troels@infopro.dk>
-
-=cut
 
 =head1 COPYRIGHT AND LICENCE
 
