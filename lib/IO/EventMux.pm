@@ -1188,13 +1188,11 @@ sub _read_all {
 
 =head1 AUTHOR
 
-Jonas Jensen <jonas@infopro.dk>
-
-Troels Liebe Bentsen <troels@infopro.dk>
+Jonas Jensen <jonas@infopro.dk>, Troels Liebe Bentsen <troels@infopro.dk>
 
 =head1 COPYRIGHT AND LICENCE
 
-Copyright 2006: Troels Liebe Bentsen, Jonas Jensen
+Copyright 2006-2007: Troels Liebe Bentsen, Jonas Jensen
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.
