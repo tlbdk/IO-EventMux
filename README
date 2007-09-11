@@ -1,0 +1,435 @@
+NAME
+    IO::EventMux - Multiplexer for sockets, pipes and any other types of
+    filehandles that you can set O_NONBLOCK on and does buffering for the
+    user.
+
+SYNOPSIS
+      use IO::EventMux;
+
+      my $mux = IO::EventMux->new();
+
+      $mux->add($my_fh, Listen => 1);
+
+      while (1) {
+        my $event = $mux->mux();
+
+        # ... do something with $event->{type} and $event->{fh}
+      }
+
+DESCRIPTION
+    This module provides multiplexing for any set of sockets, pipes, or
+    whatever you can set O_NONBLOCK on. It can be useful for both server and
+    client processes, but it works best when the application's main loop is
+    centered around its "mux()" method.
+
+    The file handles it can work with are either perl's own typeglobs or
+    IO::Handle objects (preferred).
+
+METHODS
+  new([%options])
+    Constructs an IO::EventMux object.
+
+    EventMux implements different types of priority queues that determined
+    how events are returned or written.
+
+   ReadPriorityType
+    The ReadPriorityType defines how reads should be return with the mux
+    call and how "fair" it should be. There is currently only 2
+    ReadPriorityTypes types to select from and using the default is
+    recommended.
+
+    The default is 'FairByEvent'.
+
+    FairByEvent
+      File handles change turn generating events and gets the minimum of
+      number of reads for generating one event, but if the data returned can
+      be used to generate more events. All events will be pushed to the
+      queue to be returned with the "mux()" call.
+
+        my $mux = IO::EventMux->new( ReadPriorityType => ['FairByEvent'] );
+
+        or
+
+        my $mux = IO::EventMux->new( ReadPriorityType => ['FairByEvent',
+                                                          $reads_pr_turn] );
+
+      $reads_pr_turn is the number of reads the file handle gets to generate
+      an event.
+
+      Default $reads_pr_turn is 10. -1 for unlimited.
+
+    None
+      Events are generated based on the order the file handles are read,
+      this will allow file handles returning allot of events to monopolize
+      the event loop. This also allow the other end of the file handle to
+      fill the memory of the host as EventMux will continue reading so long
+      there is data on the file handle.
+
+        my $mux = IO::EventMux->new( ReadPriorityType => ['None'] );
+
+      Use this ReadPriorityType with care and only on trusted sources as
+      it's very easy to exploit.
+
+  mux([$timeout])
+    This method will block until ether an event occurs on one of the file
+    handles or the $timeout (floating point seconds) expires. If the
+    $timeout argument is not present, it waits forever. If $timeout is 0, it
+    returns immediately.
+
+    The return value is always a hash, which always has the key 'type',
+    indicating what kind it is. It will also usually carry the 'fh' key,
+    indicating what file handle the event happened on.
+
+    The 'type' key can have the following values:
+
+    timeout
+        Nothing happened and timeout occurred.
+
+    error
+        The "select()" system call failed. The event hash will have the key
+        'error', which is set to the value of $! at the time of the error.
+        Use kill() on the file handle to make the error be handled like a
+        normal "closed" event.
+
+    accepted
+        A new client connected to a listening socket and the connection was
+        accepted by EventMux. The listening socket file handle is in the
+        'parent_fh' key.
+
+    ready
+        A file handle is ready to be written to, this can be use full when
+        working with nonblocking connects so you know when the remote
+        connection accepted the connection.
+
+    accepting
+        A new client is trying to connect to a listening socket, but the
+        user code must call accept manually. This only happens when the
+        ManualAccept option is set.
+
+    read
+        A socket has incoming data. If the socket's Buffered option is set,
+        this will be what the buffering rule define.
+
+        The data is contained in the 'data' key of the event hash. If recv()
+        returned a sender address, it is contained in the 'sender' key and
+        must be manually unpacked according to the socket domain, e.g. with
+        "Socket::unpack_sockaddr_in()".
+
+    read_last
+        A socket last data before it was closed did not match the buffering
+        rules, this can happen with the following buffering types: Size,
+        FixedSize and Regexp. And is generally an indicator that you
+        received data that you did not expect.
+
+        The Buffering types: "Split", "Disconnect" and "None" expects this
+        and will return a read instead.
+
+        The default is not to return read_last, in the sense that "None" is
+        the default buffering type.
+
+    sent
+        A socket has sent all the data in it's queue with the send call.
+        This however does not indicate that the data has reached the other
+        end, normally only that the data has reached the local buffer of the
+        kernel.
+
+    closing
+        A file handle was detected to be have been closed by the other end
+        or the file handle was set to be closed by the user. So EventMux
+        stooped listening for events on this file handle. Event data like
+        'Meta' is still accessible.
+
+        The 'missing' key indicates the amount of data or packets left in
+        the user space buffer when the file handle was closed. This does not
+        indicate the amount of data received by the other end, only that the
+        user space buffer left.
+
+    closed
+        A socket/pipe was disconnected/closed, the file descriptor, all
+        internal references, and data store with the file handle was
+        removed.
+
+    can_write
+        The ManualWrite option is set for the file handle, and "select()"
+        has indicated that the handle can be written to.
+
+    can_read
+        The ManualRead option is set for the file handle, and "select()" has
+        indicated that the handle can be read from.
+
+  add($handle, [ %options ])
+    Add a socket to the internal list of handles being watched.
+
+    The optional parameters for the handle will be taken from the
+    IO::EventMux object if not given here:
+
+   Listen
+    Defines if this is should be treated as a listening socket, the default
+    is no.
+
+    The socket must be set up for listening, which is easily done with
+    IO::Socket::INET:
+
+      my $listener = IO::Socket::INET->new(
+        Listen    => 5,
+        LocalPort => 7007,
+        ReuseAddr => 1,
+      );
+
+      $mux->add($listener, Listen => 1);
+
+   Type
+    Either "stream" or "dgram". Should be auto detected in most cases.
+
+    Defaults to "stream".
+
+   ManualAccept
+    If a connection comes in on a listening socket, it will by default be
+    accepted automatically, and mux() will return a 'connect' event. If
+    ManualAccept is set an 'accept' event will be returned instead, and the
+    user code must handle it itself.
+
+      $mux->add($my_fh, ManualAccept => 1);
+
+   ManualWrite
+    By default EventMux handles nonblocking writing and you should use
+    $mux->send($fh, $data) or $mux->sendto($fh, $addr, $data) to send your
+    data, but if some reason you send data yourself you can tell EventMux
+    not to do writing for you and generate a 'can_write' event for you
+    instead.
+
+      $mux->add($my_fh, ManualWrite => 1);
+
+    In both cases you can use send() to write data to the file handle.
+
+    Note: If both ManualRead and ManualWrite is set, EventMux will not set
+    the socket to nonblocking.
+
+   ManualRead
+    By default EventMux will handle nonblocking reading and generate a read
+    event with the data, but if some reason you would like to do the reading
+    yourself you can have EventMux generate a 'can_read' event for you
+    instead.
+
+      $mux->add($my_fh, ManualRead => 1);
+
+    Never read or recv on the file handle. When the socket becomes readable,
+    a "can_read" event is returned.
+
+    Note: If both ManualRead and ManualWrite is set, EventMux will not set
+    the socket to nonblocking.
+
+   ReadSize
+    By default EventMux will try to read 65536 bytes from the file handle,
+    setting this options to something smaller might help make it easier for
+    EventMux to be fair about how it returns it's event, but will also give
+    more overhead as more system calls will be required to empty a file
+    handle.
+
+   Buffered
+    Can be a number of different buffering types, common for all of them is
+    that they define when a event should be generated based on when there is
+    enough data for the buffering type to be satisfied. All buffering types
+    also generate an event with the remaining data when there is a
+    disconnect.
+
+    As a protection against a hostile remote end filling your memory a
+    $max_read_size is defined for most of buffering types, this defines the
+    maximum amount of data to read from a file handle before generating an
+    event.
+
+    The default buffering type is 'None'
+
+    Size
+      Buffering that reads the size from the data to determine when to
+      generate an event. Only the data is returned not the bytes that hold
+      the length information.
+
+        $mux->add($my_fh, Buffered => ['Size', $template]);
+
+      $template is a pack TEMPLATE, an event is returned when length defined
+      in the $template is reached.
+
+        $mux->add($my_fh, Buffered => ['Size', $template, $offset]);
+
+      $offset is the numbers of bytes to add to the length that was unpacked
+      with the $template.
+
+        $mux->add($my_fh, Buffered => ['Size', $template, $offset, $max_read_size]);
+
+      $max_read_size is the maximum number of bytes to read from the file
+      handle pr. event. The default is 1048576 bytes.
+
+      If the size read from the template is bigger than $max_read_size an
+      error event will be generated and only $max_read_size will be read
+      from the socket.
+
+    FixedSize
+      Buffering that uses a fixed size to determine when to generate an
+      event.
+
+        $mux->add($my_fh, Buffered => ['FixedSize', $size]);
+
+      $size is the number of bytes to buffer.
+
+    Split
+      Buffering that uses a regular expressing to determine where to split
+      data into events. Only the data is returned not the splitter pattern
+      itself.
+
+        $mux->add($my_fh, Buffered => ['Split', $regexp]);
+  
+        or 
+
+        $mux->add($my_fh, Buffered => ['Split', $regexp, $max_read_size]);
+
+      $regexp is a regular expressing that tells where the split the data.
+
+      This also works as line buffering when qr/\n/ is used or for a C
+      string with qr/\0/.
+
+      $max_read_size is the maximum number of bytes to read from the file
+      handle pr. event. The default is 1048576 bytes.
+
+      If no match has been reach after matching $max_read_size of data from
+      the buffer a error event will be generated and the $max_read_size of
+      data will be returned in a data event.
+
+    Regexp
+      Buffering that uses a regular expressing to determine when there is
+      enough data for an event. Only the match defined in the () is returned
+      not the complete regular expressing.
+
+        $mux->add($my_fh, Buffered => ['Regexp', $regexp]);
+
+        or 
+  
+        $mux->add($my_fh, Buffered => ['Regexp', $regexp, $max_read_size]);
+
+      $regexp is a regular expressing that tells what data to return.
+
+      An example would be qr/^(.+)\n/ that would work as line buffing.
+
+      $max_read_size is the maximum number of bytes to read from the file
+      handle pr. event. The default is 1048576 bytes.
+
+      If no match has been reach after matching $max_read_size of data from
+      the buffer a error event will be generated and the $max_read_size of
+      data will be returned in a data event.
+
+    Disconnect
+      Buffering that waits for the file handle to be closed or disconnected
+      to generate a 'read' event.
+
+        $mux->add($my_fh, Buffered => ['Disconnect']);
+    
+        or
+
+        $mux->add($my_fh, Buffered => ['Disconnect', $max_read_size]);
+
+      $max_read_size is the maximum number of bytes to read from the file
+      handle pr. event. The default is 1048576 bytes.
+
+      If more data than $max_read_size if received before the file handle is
+      closed or disconnected, an error event will be generated and
+      $max_read_size of data will be returned in a data event.
+
+    None
+      Disable Buffering and return data when it's received. This is the
+      default state.
+
+        $mux->add($my_fh, Buffered => ['None']);
+
+        or
+
+        $mux->add($my_fh, Buffered => ['None', $max_read_size]);
+
+      $max_read_size is the maximum number of bytes to read from the file
+      handle pr. event. The default is 1048576 bytes.
+
+   Meta
+    An optional scalar piece of metadata for the file handle. Can be
+    retrieved and manipulated later with meta()
+
+  handles()
+    Returns a list of file handles managed by this object.
+
+  meta($fh, [$newval])
+    Set or get a piece of metadata on the filehandle. This can be any scalar
+    value.
+
+  remove($fh)
+    Make EventMux forget about a file handle. The caller will then take over
+    the responsibility of closing it.
+
+  close($fh)
+    Close a file handle. File handles managed by EventMux must be closed
+    through this method to make sure all resources are freed.
+
+    IO::EventMux will delay closing the file handle until the out buffer is
+    empty and at the same time stop listening on read event on that socket.
+    This in turn will also generate a 'closing' and a 'closed' event.
+
+    Note: All meta data associated with the file handle will be kept until
+    the final 'closed' event is returned.
+
+  kill($fh)
+    Closes a file handle without giving time to finish any outstanding
+    operations. Returns a 'closed' event, delete all buffers and does not
+    keep 'Meta' data.
+
+    Note: Does not return the 'read_last' event.
+
+  timeout($fh, [ $set_timeout ])
+    Get or set the read timeout for this file handle in seconds. When no
+    data has been received for this many seconds, a 'timeout' event will be
+    returned for this file handle.
+
+    Set the undefined value for infinite timeout, which is the default.
+
+    The timeout is reset to infinity if any data is read from the file
+    handle, so it should be set again before the next read if desired.
+
+  buflen($fh)
+    Queries the length of the output buffer for this file handle. This only
+    applies if ManualWrite is turned off, which is the default. For
+    Type="dgram" sockets, it returns the number of datagrams in the queue.
+
+    An application can use this method to see whether it should send more
+    data or wait until the buffer queue is a bit shorter.
+
+  send($fh, @data)
+    Queues @data to be written to the file handle $fh. Can only be used when
+    ManualWrite is off (default).
+
+    If the socket is of Type="stream" (default)
+        Returns true on success, undef on error. The data is sent when the
+        socket becomes unblocked and a 'sent' event is posted when all data
+        is sent and the buffer is empty. Therefore the socket should not be
+        closed until "buflen($fh)" returns 0 or a sent request has been
+        posted.
+
+    If the socket is of Type="dgram"
+        Each item in @data will be sent as a separate packet. Returns true
+        on success and undef on error.
+
+  sendto($fh, $to, @data)
+    Like "send()", but with the recepient $to as a packed sockaddr
+    structure, such as the one returned by "Socket::pack_sockaddr_in()".
+    Only for Type="dgram" sockets.
+
+      $mux->sendto($my_fh, pack_sockaddr_in($port, inet_aton($ip)), $data);
+
+  nonblock($socket)
+    Puts socket into nonblocking mode.
+
+AUTHOR
+    Jonas Jensen <jonas@infopro.dk>, Troels Liebe Bentsen
+    <troels@infopro.dk>
+
+COPYRIGHT AND LICENCE
+    Copyright 2006-2007: Troels Liebe Bentsen, Jonas Jensen
+
+    This library is free software; you can redistribute it and/or modify it
+    under the same terms as Perl itself.
+
