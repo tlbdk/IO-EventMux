@@ -1,6 +1,6 @@
 ---
 name: IO-EventMux
-version: 1.00
+version: 1.01
 author:
   - 'Jonas Jensen <jonas@infopro.dk>,Troels Liebe Bentsen <troels@infopro.dk>'
 abstract: |-
@@ -14,7 +14,7 @@ build_requires:
 provides:
   IO::EventMux:
     file: lib/IO/EventMux.pm
-    version: 1.00
+    version: 1.01
 generated_by: Module::Build version 0.2808
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html
