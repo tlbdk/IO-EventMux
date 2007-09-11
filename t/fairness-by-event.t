@@ -10,7 +10,7 @@ my $mux = IO::EventMux->new(ReadPriorityType => ['FairByEvent']);
 sub create_writer {
     my ($data) = @_;
 
-    pipe my $readerOUT, my $writerOUT or die;
+    pipe my ($readerOUT), my ($writerOUT) or die;
 
     my $pid = fork;
     if ($pid == 0) {
