@@ -12,3 +12,4 @@ t/socket-send-error-2.6.19.t
 t/tcp-send-accept-test.t
 README
 META.yml
+ChangeLog
