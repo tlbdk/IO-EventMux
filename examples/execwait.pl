@@ -1,5 +1,6 @@
-#!/usr/bin/perl -w
+#!/usr/bin/env perl
 use strict;
+use warnings;
 
 # This example program shows how to wait for a child process and listen to it's
 # STDERR, STDOUT and send data to it's STDIN using EventMux. It waits for the 
