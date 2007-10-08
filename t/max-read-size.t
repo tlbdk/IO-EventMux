@@ -1,4 +1,3 @@
-#!perl -I lib
 use strict;
 use warnings;
 
