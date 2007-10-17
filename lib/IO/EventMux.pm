@@ -291,11 +291,11 @@ sub _get_event {
 
             my $packederror = getsockopt($fh, SOL_SOCKET, SO_ERROR);
             if(!defined $packederror) {
-                $self->_push_event({ type => 'ready', fh => $fh });
+                $self->push_event({ type => 'ready', fh => $fh });
             } else {
                 my $error = unpack("i", $packederror);
                 if($error == 0) {
-                    $self->_push_event({ type => 'ready', fh => $fh });
+                    $self->push_event({ type => 'ready', fh => $fh });
                 } else {
                     my $str = "Uknown error code: $error";
                     
@@ -307,7 +307,7 @@ sub _get_event {
                         $str = "Connection reset by peer";
                     }
                     
-                    $self->_push_event({ type => 'error',
+                    $self->push_event({ type => 'error',
                         fh => $fh, error=> "get_event(can_write):$str" });
                 }
             }
@@ -322,7 +322,7 @@ sub _get_event {
             }
 
         } else {
-            $self->_push_event({ type => 'can_write', fh => $fh });
+            $self->push_event({ type => 'can_write', fh => $fh });
         }
     }
 
@@ -334,17 +334,17 @@ sub _get_event {
             # new connection
             if ($self->{auto_accept}) {
                 my $client = $fh->accept or next;
-                $self->_push_event({ type => 'accepted', fh => $client,
+                $self->push_event({ type => 'accepted', fh => $client,
                         parent_fh => $fh });
                 $self->add($client, %{$self->{fhs}{$fh}{opts}}, Listen => 0);
                 # Set ready as we already sent a connect.
                 $self->{fhs}{$client}{ready} = 1;
             } else {
-                $self->_push_event({ type => 'accepting', fh => $fh });
+                $self->push_event({ type => 'accepting', fh => $fh });
             }
 
         } elsif (!$self->{fhs}{$fh}{auto_read}) {
-            $self->_push_event({ type => 'can_read', fh => $fh });
+            $self->push_event({ type => 'can_read', fh => $fh });
 
         } else {
             $self->_read_all($fh);
@@ -700,11 +700,11 @@ sub close {
     
     if(exists $self->{listenfh}{$fh}) {
         delete $self->{listenfh}{$fh};
-        $self->_push_event({ type => 'closing', fh => $fh });
+        $self->push_event({ type => 'closing', fh => $fh });
         
         # wait with the close so a valid file handle can be returned
         push @{$self->{actionq}}, sub {
-            $self->_push_event({ type => 'closed', fh => $fh });
+            $self->push_event({ type => 'closed', fh => $fh });
             $self->_close_fh($fh);
         };
     
@@ -713,7 +713,7 @@ sub close {
         
         if($self->buflen($fh) == 0) {
             $self->{writefh}->remove($fh);
-            $self->_push_event({ type => 'closing', fh => $fh });
+            $self->push_event({ type => 'closing', fh => $fh });
                         
             # wait with the close so a valid file handle can be returned
             push @{$self->{actionq}}, sub {
@@ -740,7 +740,7 @@ sub kill {
     $self->{readfh}->remove($fh);
     $self->{writefh}->remove($fh);
 
-    $self->_push_event({ type => 'closed', fh => $fh, 
+    $self->push_event({ type => 'closed', fh => $fh, 
             missing => $self->buflen($fh) });
     
     $self->_close_fh($fh);
@@ -889,7 +889,7 @@ sub _send_dgram {
                 unshift @{$cfg->{outbuffer}}, $queue_item;
                 return $packets_sent;
             } else {
-                $self->_push_event({ type => 'error', error => "send_dgram:$!", 
+                $self->push_event({ type => 'error', error => "send_dgram:$!", 
                     fh => $fh });
             }
             return undef;
@@ -904,11 +904,11 @@ sub _send_dgram {
     }
     
     
-    $self->_push_event({type => 'sent', fh => $fh});
+    $self->push_event({type => 'sent', fh => $fh});
     $self->{writefh}->remove($fh);
     
     if($self->{fhs}{$fh}{disconnecting}) {
-        $self->_push_event({ type => 'closing', fh => $fh });
+        $self->push_event({ type => 'closing', fh => $fh });
                         
         # wait with the close so a valid file handle can be returned
         push @{$self->{actionq}}, sub {
@@ -938,14 +938,14 @@ sub _send_stream {
             return undef;
         
         } else {
-            $self->_push_event({ type => 'error', error => "send_stream:$!", 
+            $self->push_event({ type => 'error', error => "send_stream:$!", 
                 fh => $fh });
         }
         
         return undef;
 
     } elsif ($rv < 0) {
-        $self->_push_event({ type => 'error', error => "send_stream:$!", 
+        $self->push_event({ type => 'error', error => "send_stream:$!", 
             fh => $fh });
         return undef;
 
@@ -957,11 +957,11 @@ sub _send_stream {
     } else {
         # all pending data was sent
         $cfg->{outbuffer} = '';
-        $self->_push_event({type => 'sent', fh => $fh});
+        $self->push_event({type => 'sent', fh => $fh});
         $self->{writefh}->remove($fh);
 
         if($self->{fhs}{$fh}{disconnecting}) {
-            $self->_push_event({ type => 'closing', fh => $fh });
+            $self->push_event({ type => 'closing', fh => $fh });
                         
             # wait with the close so a valid file handle can be returned
             push @{$self->{actionq}}, sub {
@@ -986,8 +986,16 @@ sub _my_send {
     return $@ ? undef : $rv;
 }
 
-sub _push_event {
-    push @{$_[0]->{events}}, $_[1];
+
+=head2 B<push_event($event)> 
+
+Puts socket into nonblocking mode.
+
+=cut
+
+sub push_event {
+    my($self, @events) = @_;
+    push @{$_[0]->{events}}, @events;
 }
 
 =head2 B<nonblock($socket)> 
@@ -1047,7 +1055,7 @@ sub _read_all {
 
             if (not defined $rv) {
                 if ($! != POSIX::EWOULDBLOCK) {
-                    $self->_push_event({ type => 'error', 
+                    $self->push_event({ type => 'error', 
                             error => "read_all:$!", fh => $fh });
                 }
                 $canread = 0;
@@ -1098,7 +1106,7 @@ sub _read_all {
                 $copy{'data'} = substr($cfg->{inbuffer},
                     $datastart, $length);
                 substr($cfg->{inbuffer}, 0, $length+$datastart) = '';
-                $self->_push_event(\%copy);
+                $self->push_event(\%copy);
             }
 
         } elsif($buffertype eq 'FixedSize') {
@@ -1108,7 +1116,7 @@ sub _read_all {
                 my %copy = %event;
                 $copy{'data'} = substr($cfg->{inbuffer}, 0, $length);
                 substr($cfg->{inbuffer}, 0, $length) = '';
-                $self->_push_event(\%copy);
+                $self->push_event(\%copy);
             }
 
         } elsif($buffertype eq 'Split') {
@@ -1118,7 +1126,7 @@ sub _read_all {
                 if($1 ne '') {
                     my %copy = %event;
                     $copy{'data'} = $1;
-                    $self->_push_event(\%copy);
+                    $self->push_event(\%copy);
                 }
             }
 
@@ -1129,7 +1137,7 @@ sub _read_all {
                 if($1 ne '') {
                     my %copy = %event;
                     $copy{'data'} = $1;
-                    $self->_push_event(\%copy);
+                    $self->push_event(\%copy);
                 }
             }
 
@@ -1138,7 +1146,7 @@ sub _read_all {
         } elsif($buffertype eq 'None') {
             $event{'data'} = $cfg->{inbuffer};
             $cfg->{inbuffer} = '';
-            $self->_push_event(\%event);
+            $self->push_event(\%event);
 
         } else {
             die("Unknown Buffered type: $buffertype");
@@ -1154,7 +1162,7 @@ sub _read_all {
 
     if ($cfg->{max_read_size}
             and length $cfg->{inbuffer} >= $cfg->{max_read_size}) {
-        $self->_push_event({ type => 'error', fh => $fh, 
+        $self->push_event({ type => 'error', fh => $fh, 
                 error => "Buffer size exceeded"});
         $cfg->{return_last} = 0; # last chunk is incomplete
         $disconnected = 1;
@@ -1164,17 +1172,17 @@ sub _read_all {
         # Return the last bit of buffer to the user when we get a disconnect.
         if(length($cfg->{inbuffer}) > 0) {
             if($cfg->{return_last}) {
-                $self->_push_event({ type => 'read', fh => $fh, 
+                $self->push_event({ type => 'read', fh => $fh, 
                         data => $cfg->{inbuffer}});
             } else {
-                $self->_push_event({ type => 'read_last', fh => $fh, 
+                $self->push_event({ type => 'read_last', fh => $fh, 
                         data => $cfg->{inbuffer}});
             }
             $cfg->{inbuffer} = '';
         }
 
         if($disconnected) {
-            $self->_push_event({ type => 'closing', fh => $fh });
+            $self->push_event({ type => 'closing', fh => $fh });
 
             # wait with the close so a valid file handle can be returned
             push @{$self->{actionq}}, sub {
