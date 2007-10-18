@@ -4,6 +4,14 @@ use warnings;
 
 our $VERSION = '1.01';
 
+# TODO: Add support for sending ICMP error events:
+#   Google keywords: "out-of-band"
+#   Man pages: see IP_RECVERR in ip(7)
+#   Functions: Setsockopt on the socket to get it working.
+#              Read errors with recvmsg or recv
+#   Links: http://www.unix.org.ua/orelly/perl/prog3/ch16_05.htm
+#   http://homepages.cwi.nl/~aeb/linux/man2html/man2/socket.2.html
+
 =head1 NAME
 
 IO::EventMux - Multiplexer for sockets, pipes and any other types of
