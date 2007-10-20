@@ -1104,16 +1104,24 @@ sub _read_all {
 
         if($buffertype eq 'Size') {
             my ($pattern, $offset) = (@args, 0); # Defaults to 0 if no offset
+            # FIXME: Check that we have enough data to do the unpack.
+            #        eg. length(pack($pattern, 30 x (1))); # remember to check
+            #        for * elements.
+            #
             my $length = (unpack($pattern, $cfg->{inbuffer}))[0]+$offset;
             my $datastart = length(pack($pattern, $length));
-            #print "EventMux:length: $length, $datastart\n";
-            
-            if($length <= length($cfg->{inbuffer})) {
+             
+            while($length <= length($cfg->{inbuffer})) {
                 my %copy = %event;
                 $copy{'data'} = substr($cfg->{inbuffer},
                     $datastart, $length);
                 substr($cfg->{inbuffer}, 0, $length+$datastart) = '';
                 $self->push_event(\%copy);
+                
+                if(length $cfg->{inbuffer} > 0) {
+                    $length = (unpack($pattern, $cfg->{inbuffer}))[0]+$offset;
+                    $datastart = length(pack($pattern, $length));
+                }
             }
 
         } elsif($buffertype eq 'FixedSize') {
