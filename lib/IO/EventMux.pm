@@ -1104,12 +1104,11 @@ sub _read_all {
 
         if($buffertype eq 'Size') {
             my ($pattern, $offset) = (@args, 0); # Defaults to 0 if no offset
-            my $length = 
-            (unpack($pattern, $cfg->{inbuffer}))[0]+$offset;
-
+            my $length = (unpack($pattern, $cfg->{inbuffer}))[0]+$offset;
             my $datastart = length(pack($pattern, $length));
-
-            while($length <= length($cfg->{inbuffer})) {
+            #print "EventMux:length: $length, $datastart\n";
+            
+            if($length <= length($cfg->{inbuffer})) {
                 my %copy = %event;
                 $copy{'data'} = substr($cfg->{inbuffer},
                     $datastart, $length);
