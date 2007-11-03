@@ -11,6 +11,7 @@ our $VERSION = '1.01';
 #              Read errors with recvmsg or recv
 #   Links: http://www.unix.org.ua/orelly/perl/prog3/ch16_05.htm
 #   http://homepages.cwi.nl/~aeb/linux/man2html/man2/socket.2.html
+#   SO_OOBINLINE : http://www.tutorialspoint.com/perl/perl_getsockopt.htm
 
 =head1 NAME
 
@@ -273,13 +274,19 @@ sub _get_event {
     }
 
     $! = 0;
-    # TODO : handle OOB data
+    # FIXME : handle OOB data and exceptions
     my @result = IO::Select->select($self->{readfh}, $self->{writefh},
-        undef, (!defined $timeout || $timeout > 0 ? $timeout : 0));
+        [@{$self->{readfh}}, @{$self->{writefh}}],
+        (!defined $timeout || $timeout > 0 ? $timeout : 0));
+
+    #use Data::Dumper; print Dumper({readeble => $result[0], writeble =>
+    #   $result[1], exception => $result[2]}) if @result > 0;
 
     if (@result == 0) {
         if ($!) {
-            return { type => 'error', error => "get_event(select):$!" };
+            # FIXME: Set better error_type by looking at the error.
+            return { type => 'error', 
+                    error => "get_event(select):$!", error_type => 'unknown' };
         } elsif ($timeout_fh) {
             return { type => 'timeout', fh => $timeout_fh };
         } else {
@@ -316,7 +323,9 @@ sub _get_event {
                     }
                     
                     $self->push_event({ type => 'error',
-                        fh => $fh, error=> "get_event(can_write):$str" });
+                        fh => $fh, error => "get_event(can_write):$str",
+                        error_num => $error, error_type => 'connection',
+                    });
                 }
             }
 
@@ -609,24 +618,31 @@ sub add {
     $self->{fhs}{$client}{meta} = $opts{Meta} if exists $opts{Meta};
 
     $self->{listenfh}{$client} = 1 if $opts{Listen};
+
+    my $type = getsockopt($client, SOL_SOCKET, SO_TYPE);
+    $type = unpack("I", $type) if defined $type;
+
+    # Check if it's a socket and not a pipe
+    if(defined $type) {
+        if($type == SOCK_STREAM) { # TCP
+            # Add to find out when to send ready event.
+            if (!$opts{Listen}) {
+                $self->{writefh}->add($client);
+                $self->{fhs}{$client}{ready} = 0;
+            }
+        } elsif($type == SOCK_DGRAM or $type == SOCK_RAW) {
+            $self->{fhs}{$client}{type} = 'dgram';
+            
+        } else {
+            croak "Unknown socket type: $type";
+        }
+
+    } else {
+        $self->{writefh}->add($client);
+        $self->{fhs}{$client}{ready} = 0;
+    }
     
     $self->{readfh}->add($client);
-
-    # If this is not UDP(SOCK_DGRAM) send a ready event.
-    if ((!UNIVERSAL::can($client, "socktype") 
-            or ($client->socktype || 0) != SOCK_DGRAM)) {
-        #TODO Only works on IO::Socket, change to use a socktype that works for
-        # all kind of filehandles.
-
-        # Add to find out when to send ready event.
-        if (!$opts{Listen}) {
-            $self->{writefh}->add($client);
-            $self->{fhs}{$client}{ready} = 0;
-        }
-    
-    } else {
-        $self->{fhs}{$client}{type} = 'dgram';
-    }
 
     $self->{fhs}{$client}{type} = (exists $opts{Type} ?
         $opts{Type} : $self->{type});
@@ -897,8 +913,9 @@ sub _send_dgram {
                 unshift @{$cfg->{outbuffer}}, $queue_item;
                 return $packets_sent;
             } else {
+                # FIXME: Set correct error type.
                 $self->push_event({ type => 'error', error => "send_dgram:$!", 
-                    fh => $fh });
+                    fh => $fh, error_type => 'unknown' });
             }
             return undef;
 
@@ -946,15 +963,28 @@ sub _send_stream {
             return undef;
         
         } else {
-            $self->push_event({ type => 'error', error => "send_stream:$!", 
-                fh => $fh });
+            my $error_type = 'unknown';
+
+            if($! =~ /Bad file descriptor/) {
+                $error_type = 'eventmux';
+                $self->{readfh}->remove($fh);
+                $self->{writefh}->remove($fh);
+            }
+
+            $self->push_event({ type => 'error', fh => $fh, 
+                error => "send_stream(undef):$!", 
+                error_type => $error_type,
+            });
         }
         
         return undef;
 
     } elsif ($rv < 0) {
-        $self->push_event({ type => 'error', error => "send_stream:$!", 
-            fh => $fh });
+        # FIXME: Set correct error type.
+        $self->push_event({ type => 'error', fh => $fh, 
+            error => "send_stream(0):$!", 
+            error_type => 'unknown'
+        });
         return undef;
 
     } elsif ($rv < length $cfg->{outbuffer}) {
@@ -1063,8 +1093,17 @@ sub _read_all {
 
             if (not defined $rv) {
                 if ($! != POSIX::EWOULDBLOCK) {
+                    my $error_type = 'unknown';
+                    
+                    if($! =~ /Connection refused/) {
+                        $error_type = 'connection';
+                    }
+                    
+                    # FIXME: Set correct error type.
                     $self->push_event({ type => 'error', 
-                            error => "read_all:$!", fh => $fh });
+                        error => "read_all:$!", error_type => $error_type,
+                        fh => $fh,
+                    });
                 }
                 $canread = 0;
                 last READ;
@@ -1178,7 +1217,7 @@ sub _read_all {
     if ($cfg->{max_read_size}
             and length $cfg->{inbuffer} >= $cfg->{max_read_size}) {
         $self->push_event({ type => 'error', fh => $fh, 
-                error => "Buffer size exceeded"});
+                error => "Buffer size exceeded", error_type => 'eventmux'});
         $cfg->{return_last} = 0; # last chunk is incomplete
         $disconnected = 1;
     }
@@ -1222,4 +1261,3 @@ it under the same terms as Perl itself.
 
 =cut
 
-# vim: et sw=4 sts=4 tw=80

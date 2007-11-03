@@ -1,0 +1,37 @@
+use strict;
+use warnings;
+
+use Test::More tests => 1;                      # last test to print
+
+use IO::Socket::INET;
+use IO::EventMux;
+use Socket;
+
+my $fh1 = IO::Socket::INET->new(
+    PeerAddr => '127.0.0.1',
+    PeerPort => 12345,
+    Proto    => 'tcp',
+    Blocking => 0,
+) or die("\n");
+
+my $mux = IO::EventMux->new();
+$mux->add($fh1);
+
+while(1) {
+    my $event = $mux->mux(2);
+    use Data::Dumper; print Dumper($event);
+    
+    if($event->{type} eq 'error') {
+        if($event->{error_type} eq 'connection') {
+            pass "We got a connection error";
+        } else {
+            fail "We did not get a connection error";
+        }
+        exit;
+    } elsif($event->{type} eq 'timeout') {
+        fail "Got timeout??";
+        exit;
+    }
+}
+
+
