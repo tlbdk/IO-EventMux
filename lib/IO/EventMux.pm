@@ -577,84 +577,86 @@ manipulated later with meta()
 =cut
 
 sub add {
-    my ($self, $client, %opts) = @_;
+    my ($self, $fh, %opts) = @_;
 
-    $self->{fhs}{$client}{buffered} = (exists $opts{Buffered} ?
+    $self->{fhs}{$fh}{buffered} = (exists $opts{Buffered} ?
         $opts{Buffered} : $self->{buffered});
 
     # Set return_last if default for the buffering type.
-    if($self->{fhs}{$client}{buffered}[0] eq 'None' or 
-        $self->{fhs}{$client}{buffered}[0] eq 'Split' or 
-        $self->{fhs}{$client}{buffered}[0] eq 'Disconnect') {
-        $self->{fhs}{$client}{return_last} = 1;
+    if($self->{fhs}{$fh}{buffered}[0] eq 'None' or 
+        $self->{fhs}{$fh}{buffered}[0] eq 'Split' or 
+        $self->{fhs}{$fh}{buffered}[0] eq 'Disconnect') {
+        $self->{fhs}{$fh}{return_last} = 1;
     }
 
-    if ($self->{fhs}{$client}{buffered}[0] =~ /^Split|Regexp$/) {
-        if (@{$self->{fhs}{$client}{buffered}} < 3) {
-            $self->{fhs}{$client}{max_read_size} = 1048576;
+    if ($self->{fhs}{$fh}{buffered}[0] =~ /^Split|Regexp$/) {
+        if (@{$self->{fhs}{$fh}{buffered}} < 3) {
+            $self->{fhs}{$fh}{max_read_size} = 1048576;
         } else {
-            (undef, undef, $self->{fhs}{$client}{max_read_size}) =
-                @{$self->{fhs}{$client}{buffered}};
+            (undef, undef, $self->{fhs}{$fh}{max_read_size}) =
+                @{$self->{fhs}{$fh}{buffered}};
         }
     }
 
-    $self->{fhs}{$client}{auto_accept} = (exists $opts{ManualAccept} ?
+    $self->{fhs}{$fh}{auto_accept} = (exists $opts{ManualAccept} ?
         !$opts{ManualAccept} : $self->{auto_accept});
 
-    $self->{fhs}{$client}{auto_write} = (exists $opts{ManualWrite} ?
+    $self->{fhs}{$fh}{auto_write} = (exists $opts{ManualWrite} ?
         !$opts{ManualWrite} : $self->{auto_write});
 
-    $self->{fhs}{$client}{auto_read} = (exists $opts{ManualRead} ?
+    $self->{fhs}{$fh}{auto_read} = (exists $opts{ManualRead} ?
         !$opts{ManualRead} : $self->{auto_read});
 
-    $self->{fhs}{$client}{read_size} = (exists $opts{ReadSize} ?
+    $self->{fhs}{$fh}{read_size} = (exists $opts{ReadSize} ?
         $opts{ReadSize} : $self->{read_size});
 
-    if ($self->{fhs}{$client}{auto_read} 
-        || $self->{fhs}{$client}{auto_write} || $opts{Listen}) {
-        $self->nonblock($client);
+    if ($self->{fhs}{$fh}{auto_read} 
+        || $self->{fhs}{$fh}{auto_write} || $opts{Listen}) {
+        $self->nonblock($fh);
     }
     
-    $self->{fhs}{$client}{meta} = $opts{Meta} if exists $opts{Meta};
+    $self->{fhs}{$fh}{meta} = $opts{Meta} if exists $opts{Meta};
 
-    $self->{listenfh}{$client} = 1 if $opts{Listen};
+    $self->{listenfh}{$fh} = 1 if $opts{Listen};
 
-    my $type = getsockopt($client, SOL_SOCKET, SO_TYPE);
+    my $type = getsockopt($fh, SOL_SOCKET, SO_TYPE);
     $type = unpack("I", $type) if defined $type;
-
     # Check if it's a socket and not a pipe
     if(defined $type) {
+        $self->{fhs}{$fh}{class} = 'socket';
+        
         if($type == SOCK_STREAM) { # TCP
             # Add to find out when to send ready event.
             if (!$opts{Listen}) {
-                $self->{writefh}->add($client);
-                $self->{fhs}{$client}{ready} = 0;
+                $self->{writefh}->add($fh);
+                $self->{fhs}{$fh}{ready} = 0;
             }
         } elsif($type == SOCK_DGRAM or $type == SOCK_RAW) {
-            $self->{fhs}{$client}{type} = 'dgram';
+            $self->{fhs}{$fh}{type} = 'dgram';
             
         } else {
             croak "Unknown socket type: $type";
         }
 
     } else {
-        $self->{writefh}->add($client);
-        $self->{fhs}{$client}{ready} = 0;
+        $self->{fhs}{$fh}{class} = 'other';
+        $self->{writefh}->add($fh);
+        $self->{fhs}{$fh}{ready} = 0;
     }
     
-    $self->{readfh}->add($client);
+    $self->{readfh}->add($fh);
 
-    $self->{fhs}{$client}{type} = (exists $opts{Type} ?
+    $self->{fhs}{$fh}{type} = (exists $opts{Type} ?
         $opts{Type} : $self->{type});
 
     # Save %opts, so we can given the to $fh->accept() children.
-    $self->{fhs}{$client}{opts} = \%opts;
-    $self->{fhs}{$client}{inbuffer} = '';
+    $self->{fhs}{$fh}{opts} = \%opts;
+    $self->{fhs}{$fh}{inbuffer} = '';
     
-    if($self->{fhs}{$client}{type} eq 'dgram') {
-        @{$self->{fhs}{$client}{outbuffer}} = ();
+    if($self->{fhs}{$fh}{type} eq 'dgram') {
+        @{$self->{fhs}{$fh}{outbuffer}} = ();
     } else {
-        $self->{fhs}{$client}{outbuffer} = '';
+        $self->{fhs}{$fh}{outbuffer} = '';
     }
 }
 
@@ -837,7 +839,7 @@ off (default).
 
 =over
 
-=item If the socket is of Type="stream" (default)
+=item If the socket is of Type="stream"
 
 Returns true on success, undef on error. The data is sent when the socket
 becomes unblocked and a 'sent' event is posted when all data is sent and the 
@@ -1006,21 +1008,39 @@ sub _my_send {
     return $@ ? undef : $rv;
 }
 
-# rv can be '', sender, undef or a number
+# rv can be sender or undef, error is 0 on tcp shutdown
 sub _my_read {
     my ($self, $fh, $read_size, $flags) = @_;
 
-    my $rv; my $data; my $error;
+    my $rv; my $data; my $error; my $type;
     $! = undef;
+    $@ = undef;
     if (UNIVERSAL::can($fh, "recv") and !$fh->isa("IO::Socket::SSL")) {
         $rv = eval { $fh->recv($data, $read_size, ($flags or 0)) };
+        $type = 'recv';
     } else {
-        $rv = eval { $rv = sysread $fh, $data, $read_size };
+        $rv = eval { sysread $fh, $data, $read_size };
+        $type = 'sysread';
     }
+    
+    # Check for errors in read
+    if($! or $@ or !defined $rv or ($rv =~ /^\d+$/ and $rv <= 0)) { 
+        if($! == EWOULDBLOCK) { 
+            $error = EWOULDBLOCK;
 
-    if(!defined $rv or ($rv =~ /^\d+$/ and $rv < 0)) { 
-        my $packederror = getsockopt($fh, SOL_SOCKET, SO_ERROR);
-        $error = unpack("i", $packederror) if defined $packederror;
+        # Try to get socket errors if it's a socket we are dealing with.
+        } elsif($self->{fhs}{$fh}{class} eq 'socket') {
+            my $packederror = getsockopt($fh, SOL_SOCKET, SO_ERROR);
+            $error = unpack("i", $packederror) if defined $packederror;
+        }
+        
+        #if(defined $error and $error == 0) {
+        #    use Data::Dumper; print Dumper({ 
+        #        error => $error, '$!' => $!, '$@' => $@, rv => $rv, 
+        #        type => $type, val => ECONNRESET, 
+        #    });
+        #}
+
         if(defined $error and $error != 0) {
             # We could get an error from getsockopt
         } elsif($! =~ /Connection refused/) {
@@ -1032,9 +1052,12 @@ sub _my_read {
         } else {
             $error = 0; 
         }
+
+    } elsif($rv eq "" or $rv =~ /^\d$/) {
+        $rv = undef;
     }
 
-    return (($@ ? undef : $rv), $data, $error);
+    return ($rv, $data, $error);
 }
 
 
@@ -1098,30 +1121,36 @@ sub _read_all {
             }
 
             my ($rv, $data, $error) = $self->_my_read($fh, $read_size, 0);
-            if (!defined $rv) {
-                if ($! != POSIX::EWOULDBLOCK) {
-                    my $str;
-                    if($error == ECONNREFUSED) {
-                        $str = "Connection refused";
-                    } elsif($error == ETIMEDOUT) {
-                        $str = "Connection timed out";
-                    } elsif($error == ECONNRESET) {
-                        $str = "Connection reset by peer";
-                    } elsif ($! =~ /Bad file descriptor/) {
-                        die "Died because IO::EventMux was passed a $!";
-                    } else {
-                        die "Died because of unknown error code: $error, $!";
-                    }
-                    
-                    $self->push_event({ type => 'error', 
-                        error => "read_all:$str", error_num => $error,
-                        fh => $fh,
-                    });
+            if ($error) {
+                my $str;
+                if ($error == EWOULDBLOCK) {
+                    $canread = 0;
+                    last READ;
+                
+                } elsif($error == ECONNREFUSED) {
+                    $str = "Connection refused";
+                } elsif($error == ETIMEDOUT) {
+                    $str = "Connection timed out";
+                } elsif($error == ECONNRESET) {
+                    $str = "Connection reset by peer";
+                } elsif ($! =~ /Bad file descriptor/) {
+                    die "Died because IO::EventMux was passed a $!";
+                } else {
+                    die "Died because of unknown error code: $error, $!";
                 }
+                    
+                $self->push_event({ type => 'error', 
+                    error => "read_all:$str", error_num => $error,
+                    fh => $fh,
+                });
+
                 $canread = 0;
                 last READ;
+            
+            } elsif(defined $rv) {
+                $sender = $rv;
             }
-
+            
             if (length $data == 0 and $cfg->{type} eq "stream") {
                 # client disconnected
                 $disconnected = 1;
