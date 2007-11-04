@@ -20,10 +20,9 @@ $mux->add($fh1);
 while(1) {
     my $event = $mux->mux(2);
     use Data::Dumper; print Dumper($event);
-    
     if($event->{type} eq 'error') {
-        if($event->{error_type} eq 'connection') {
-            pass "We got a connection error";
+        if($event->{error_num} == 111) {
+            pass "We got a connection refused";
         } else {
             fail "We did not get a connection error";
         }

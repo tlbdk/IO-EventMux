@@ -284,9 +284,7 @@ sub _get_event {
 
     if (@result == 0) {
         if ($!) {
-            # FIXME: Set better error_type by looking at the error.
-            return { type => 'error', 
-                    error => "get_event(select):$!", error_type => 'unknown' };
+            die "Died because of unknown error: $!";
         } elsif ($timeout_fh) {
             return { type => 'timeout', fh => $timeout_fh };
         } else {
@@ -312,7 +310,7 @@ sub _get_event {
                 if($error == 0) {
                     $self->push_event({ type => 'ready', fh => $fh });
                 } else {
-                    my $str = "Uknown error code: $error";
+                    my $str;
                     
                     if($error == ECONNREFUSED) {
                         $str = "Connection refused";
@@ -320,11 +318,13 @@ sub _get_event {
                         $str = "Connection timed out";
                     } elsif($error == ECONNRESET) {
                         $str = "Connection reset by peer";
+                    } else {
+                        die "Died because of unknown error code: $error";
                     }
                     
                     $self->push_event({ type => 'error',
                         fh => $fh, error => "get_event(can_write):$str",
-                        error_num => $error, error_type => 'connection',
+                        error_num => $error,
                     });
                 }
             }
@@ -913,9 +913,7 @@ sub _send_dgram {
                 unshift @{$cfg->{outbuffer}}, $queue_item;
                 return $packets_sent;
             } else {
-                # FIXME: Set correct error type.
-                $self->push_event({ type => 'error', error => "send_dgram:$!", 
-                    fh => $fh, error_type => 'unknown' });
+                die "Died because of unknown error: $!";
             }
             return undef;
 
@@ -956,35 +954,19 @@ sub _send_stream {
 
     my $rv = $self->_my_send($fh, $cfg->{outbuffer});
     
-    # send pending data before this
-    
-    if (!defined $rv) {
+    # Check for undef or -1 as both can be error retvals 
+    if (!defined $rv or $rv < 0) {
         if ($! == POSIX::EWOULDBLOCK or $! == POSIX::EAGAIN) {
             return undef;
         
         } else {
-            my $error_type = 'unknown';
-
             if($! =~ /Bad file descriptor/) {
-                $error_type = 'eventmux';
-                $self->{readfh}->remove($fh);
-                $self->{writefh}->remove($fh);
+                die "Died because IO::Eventmux was passed a: $!";
+            } else {
+                die "Died because of unknown error: $!";
             }
-
-            $self->push_event({ type => 'error', fh => $fh, 
-                error => "send_stream(undef):$!", 
-                error_type => $error_type,
-            });
         }
         
-        return undef;
-
-    } elsif ($rv < 0) {
-        # FIXME: Set correct error type.
-        $self->push_event({ type => 'error', fh => $fh, 
-            error => "send_stream(0):$!", 
-            error_type => 'unknown'
-        });
         return undef;
 
     } elsif ($rv < length $cfg->{outbuffer}) {
@@ -1023,6 +1005,38 @@ sub _my_send {
     }
     return $@ ? undef : $rv;
 }
+
+# rv can be '', sender, undef or a number
+sub _my_read {
+    my ($self, $fh, $read_size, $flags) = @_;
+
+    my $rv; my $data; my $error;
+    $! = undef;
+    if (UNIVERSAL::can($fh, "recv") and !$fh->isa("IO::Socket::SSL")) {
+        $rv = eval { $fh->recv($data, $read_size, ($flags or 0)) };
+    } else {
+        $rv = eval { $rv = sysread $fh, $data, $read_size };
+    }
+
+    if(!defined $rv or ($rv =~ /^\d+$/ and $rv < 0)) { 
+        my $packederror = getsockopt($fh, SOL_SOCKET, SO_ERROR);
+        $error = unpack("i", $packederror) if defined $packederror;
+        if(defined $error and $error != 0) {
+            # We could get an error from getsockopt
+        } elsif($! =~ /Connection refused/) {
+            $error = ECONNREFUSED;
+        } elsif($! =~ /Connection timed out/) {
+            $error = ETIMEDOUT;
+        } elsif($! =~ /Connection reset by peer/) {
+            $error = ECONNRESET;
+        } else {
+            $error = 0; 
+        }
+    }
+
+    return (($@ ? undef : $rv), $data, $error);
+}
+
 
 
 =head2 B<push_event($event)> 
@@ -1083,25 +1097,24 @@ sub _read_all {
                 }
             }
 
-            my ($data, $rv) = ('');
-            if (UNIVERSAL::can($fh, "recv") and !$fh->isa("IO::Socket::SSL")) {
-                $rv = $fh->recv($data, $read_size, 0);
-                $sender = $rv if defined $rv && $rv ne "";
-            } else {
-                $rv = sysread $fh, $data, $read_size;
-            }
-
-            if (not defined $rv) {
+            my ($rv, $data, $error) = $self->_my_read($fh, $read_size, 0);
+            if (!defined $rv) {
                 if ($! != POSIX::EWOULDBLOCK) {
-                    my $error_type = 'unknown';
-                    
-                    if($! =~ /Connection refused/) {
-                        $error_type = 'connection';
+                    my $str;
+                    if($error == ECONNREFUSED) {
+                        $str = "Connection refused";
+                    } elsif($error == ETIMEDOUT) {
+                        $str = "Connection timed out";
+                    } elsif($error == ECONNRESET) {
+                        $str = "Connection reset by peer";
+                    } elsif ($! =~ /Bad file descriptor/) {
+                        die "Died because IO::EventMux was passed a $!";
+                    } else {
+                        die "Died because of unknown error code: $error, $!";
                     }
                     
-                    # FIXME: Set correct error type.
                     $self->push_event({ type => 'error', 
-                        error => "read_all:$!", error_type => $error_type,
+                        error => "read_all:$str", error_num => $error,
                         fh => $fh,
                     });
                 }
@@ -1217,7 +1230,7 @@ sub _read_all {
     if ($cfg->{max_read_size}
             and length $cfg->{inbuffer} >= $cfg->{max_read_size}) {
         $self->push_event({ type => 'error', fh => $fh, 
-                error => "Buffer size exceeded", error_type => 'eventmux'});
+                error => "Buffer size exceeded"});
         $cfg->{return_last} = 0; # last chunk is incomplete
         $disconnected = 1;
     }
