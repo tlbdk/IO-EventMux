@@ -721,7 +721,7 @@ final 'closed' event is returned.
 sub close {
     my ($self, $fh) = @_;
 
-    return undef if $self->{fhs}{$fh}{disconnecting};
+    return if $self->{fhs}{$fh}{disconnecting};
     $self->{fhs}{$fh}{disconnecting} = 1;
     
     if(exists $self->{listenfh}{$fh}) {
@@ -875,15 +875,15 @@ sub sendto {
 
     if (not defined $fh) {
         carp "send() on an undefined file handle";
-        return undef;
+        return;
     }
 
-    my $cfg = $self->{fhs}{$fh} or return undef;
-    return undef if $cfg->{disconnecting};
+    my $cfg = $self->{fhs}{$fh} or return;
+    return if $cfg->{disconnecting};
 
     if (not $cfg->{auto_write}) {
         carp "send() on a ManualWrite file handle";
-        return undef;
+        return;
     }
 
     if ($cfg->{type} eq "dgram") {
@@ -901,7 +901,7 @@ sub sendto {
 
 sub _send_dgram {
     my ($self, $fh) = @_;
-    my $cfg = $self->{fhs}{$fh} or return undef;
+    my $cfg = $self->{fhs}{$fh} or return;
     
     my $packets_sent = 0;
 
@@ -917,7 +917,7 @@ sub _send_dgram {
             } else {
                 die "Died because of unknown error: $!";
             }
-            return undef;
+            return;
 
         } elsif ($rv < length $data) {
             die "Incomplete datagram sent (should not happen)";
@@ -946,7 +946,7 @@ sub _send_dgram {
 
 sub _send_stream {
     my ($self, $fh) = @_;
-    my $cfg = $self->{fhs}{$fh} or return undef;
+    my $cfg = $self->{fhs}{$fh} or return;
 
     if ($cfg->{outbuffer} eq '') {
         # no data to send
@@ -959,7 +959,7 @@ sub _send_stream {
     # Check for undef or -1 as both can be error retvals 
     if (!defined $rv or $rv < 0) {
         if ($! == POSIX::EWOULDBLOCK or $! == POSIX::EAGAIN) {
-            return undef;
+            return;
         
         } else {
             if($! =~ /Bad file descriptor/) {
@@ -969,7 +969,7 @@ sub _send_stream {
             }
         }
         
-        return undef;
+        return;
 
     } elsif ($rv < length $cfg->{outbuffer}) {
         # only part of the data was sent
