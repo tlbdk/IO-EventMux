@@ -27,7 +27,7 @@ setsockopt($fh2, SOL_IP, IP_RECVERR, 1);
 $fh2->send($fh2, pack_sockaddr_in(12345, inet_aton("127.0.0.1")), 'Test\n');
 sleep 2;
 
-use Socket::MsgHdr;
+#use Socket::MsgHdr;
 my $msg;
 #recvmsg($fh2, 512, MSG_ERRQUEUE) or die();
 my $n = unpack("I",getsockopt($fh2, SOL_IP, IP_RECVERR));
