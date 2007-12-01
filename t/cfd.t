@@ -1,18 +1,13 @@
 use strict;
 use warnings;
 
-my $WITHOLD = 0;
-
 use Test::More tests => 7;
 use IO::EventMux;
 #use IO::EventMuxOld;
 
 my $PORT = 7007;
 
-my $mux = ($WITHOLD ?
-    (IO::EventMuxOld->new(LineBuffered => 1))
-    : (IO::EventMux->new())
-);
+my $mux = IO::EventMux->new();
 
 # Test Listning TCP sockets
 my $listener = IO::Socket::INET->new(
@@ -23,8 +18,7 @@ my $listener = IO::Socket::INET->new(
 ) or die "Listening on port $PORT: $!\n";
 
 print "listener:$listener\n";
-$mux->add_listener($listener) if $WITHOLD;
-$mux->add($listener, Listen => 1, Buffered => ["Split", qr/\n/]) if !$WITHOLD;
+$mux->add($listener, Listen => 1, Buffered => ["Split", qr/\n/]);
 
 my $talker = IO::Socket::INET->new(
     Proto    => 'tcp',
