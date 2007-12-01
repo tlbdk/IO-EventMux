@@ -1236,9 +1236,36 @@ sub _read_all {
                     $self->push_event(\%copy);
                 }
             }
+        
+        } elsif($buffertype eq 'HTTP') {
+            if(exists $cfg->{length}) {
+               if(length $cfg->{inbuffer} >= $cfg->{length}) {
+                    my %copy = %event;
+                    $copy{data} = substr($cfg->{inbuffer}, 0, $cfg->{length});;
+                    substr($cfg->{inbuffer}, 0, $cfg->{length}) = '';
+                    $self->push_event(\%copy);
+               }
+
+            } else {
+                my $idx = index($cfg->{inbuffer}, "\r\n\r\n");
+            
+                # Found what could be a header
+                if($idx > 0) {
+                    my $header = substr($cfg->{inbuffer}, 0, $idx + 4);;
+                    if($header =~ /Content-Length:\s+(\d+)/) {
+                        $cfg->{length} = $1 + $idx + 4;
+                    } else {
+                        my %copy = %event;
+                        $copy{data} = $header;
+                        substr($cfg->{inbuffer}, 0, $idx + 4) = '';
+                        $self->push_event(\%copy);
+                    }
+                }
+            }
 
         } elsif($buffertype eq 'Disconnect') {
 
+        
         } elsif($buffertype eq 'None') {
             $event{'data'} = $cfg->{inbuffer};
             $cfg->{inbuffer} = '';
