@@ -846,7 +846,7 @@ wait until the buffer queue is a bit shorter.
 
 sub buflen {
     my ($self, $fh) = @_;
-    my $meta = $self->{fhs}{$fh};
+    my $meta = $self->{fhs}{$fh} or croak "$fh not handled by EventMux";
 
     if ($meta->{type} eq "dgram") {
         return $meta->{outbuffer} ? scalar(@{$meta->{outbuffer}}) : 0;
