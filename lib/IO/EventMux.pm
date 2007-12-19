@@ -618,20 +618,22 @@ sub add {
     $self->{fhs}{$fh}{meta} = $opts{Meta} if exists $opts{Meta};
 
     $self->{listenfh}{$fh} = 1 if $opts{Listen};
+    
+    $self->{fhs}{$fh}{type} = 'stream';
 
     my $type = getsockopt($fh, SOL_SOCKET, SO_TYPE);
-    $type = unpack("I", $type) if defined $type;
+    $type = unpack("S", $type) if defined $type;
     # Check if it's a socket and not a pipe
     if(defined $type) {
         $self->{fhs}{$fh}{class} = 'socket';
         
-        if($type == SOCK_STREAM) { # TCP
+        if($type == SOCK_STREAM) { # type = 1
             # Add to find out when to send ready event.
             if (!$opts{Listen}) {
                 $self->{writefh}->add($fh);
                 $self->{fhs}{$fh}{ready} = 0;
             }
-        } elsif($type == SOCK_DGRAM or $type == SOCK_RAW) {
+        } elsif($type == SOCK_DGRAM or $type == SOCK_RAW) { # type = 2,3
             $self->{fhs}{$fh}{type} = 'dgram';
             
         } else {
@@ -645,9 +647,8 @@ sub add {
     }
     
     $self->{readfh}->add($fh);
-
-    $self->{fhs}{$fh}{type} = (exists $opts{Type} ?
-        $opts{Type} : $self->{type});
+    
+    $self->{fhs}{$fh}{type} =  $opts{Type} if exists $opts{Type};
 
     # Save %opts, so we can given the to $fh->accept() children.
     $self->{fhs}{$fh}{opts} = \%opts;
@@ -669,6 +670,28 @@ Returns a list of file handles managed by this object.
 sub handles {
     my ($self) = @_;
     return $self->{readfh}->handles;
+}
+
+=head2 B<type()>
+
+Returns the socket type for a file handle
+
+=cut
+
+sub type {
+    my ($self, $fh) = @_;
+    return $self->{fhs}{$fh}{type};
+}
+
+=head2 B<class()>
+
+Returns the socket class for a file handle
+
+=cut
+
+sub class {
+    my ($self, $fh) = @_;
+    return $self->{fhs}{$fh}{class};
 }
 
 =head2 B<meta($fh, [$newval])>
@@ -963,6 +986,7 @@ sub _send_stream {
         
         } else {
             if($! =~ /Bad file descriptor/) {
+                #use Data::Dumper; print Dumper($self->{fhs});
                 die "Died because IO::Eventmux was passed a: $!";
             } else {
                 die "Died because of unknown error: $!";
