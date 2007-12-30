@@ -1,2 +1,10 @@
+Version 1.02 (Sun Dec 30 2007)
+ * Make push_event public, so fake events can be pushed to the queue.
+ * Fixed bug in fixed size buffering
+ * Fix all Perl::Critic warning
+ * Add experimental HTTP buffer type
+ * Fixed bug in socket type detection
+ * Croak when sending to a $fh that is not ours
+
 Version 1.01 (Tue Sep 4 2007)
  * Fixed test that was time dependent

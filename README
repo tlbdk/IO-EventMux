@@ -354,6 +354,12 @@ METHODS
   handles()
     Returns a list of file handles managed by this object.
 
+  type()
+    Returns the socket type for a file handle
+
+  class()
+    Returns the socket class for a file handle
+
   meta($fh, [$newval])
     Set or get a piece of metadata on the filehandle. This can be any scalar
     value.
@@ -402,7 +408,7 @@ METHODS
     Queues @data to be written to the file handle $fh. Can only be used when
     ManualWrite is off (default).
 
-    If the socket is of Type="stream" (default)
+    If the socket is of Type="stream"
         Returns true on success, undef on error. The data is sent when the
         socket becomes unblocked and a 'sent' event is posted when all data
         is sent and the buffer is empty. Therefore the socket should not be
@@ -419,6 +425,9 @@ METHODS
     Only for Type="dgram" sockets.
 
       $mux->sendto($my_fh, pack_sockaddr_in($port, inet_aton($ip)), $data);
+
+  push_event($event)
+    Puts socket into nonblocking mode.
 
   nonblock($socket)
     Puts socket into nonblocking mode.

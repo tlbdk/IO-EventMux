@@ -9,6 +9,7 @@ my $builder = Module::Build->new(
                         .',Troels Liebe Bentsen <troels@infopro.dk>',
     dist_version_from => 'lib/IO/EventMux.pm',
     create_readme     => 1,
+    create_makefile_pl => 'traditional',
     build_requires => {
         'Test::More' => 0,
     },

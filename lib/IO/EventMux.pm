@@ -2,7 +2,7 @@ package IO::EventMux;
 use strict;
 use warnings;
 
-our $VERSION = '1.01';
+our $VERSION = '1.02';
 
 # TODO: Add support for sending ICMP error events:
 #   Google keywords: "out-of-band"
