@@ -579,6 +579,8 @@ manipulated later with meta()
 sub add {
     my ($self, $fh, %opts) = @_;
 
+    croak "undefined fh given" if !defined $fh;
+
     $self->{fhs}{$fh}{buffered} = (exists $opts{Buffered} ?
         $opts{Buffered} : $self->{buffered});
 
