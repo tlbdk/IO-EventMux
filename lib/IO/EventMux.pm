@@ -24,7 +24,7 @@ filehandles that you can set O_NONBLOCK on and does buffering for the user.
 
   my $mux = IO::EventMux->new();
 
-  $mux->add($my_fh, Listen => 1);
+  $mux->add($my_fh);
 
   while (1) {
     my $event = $mux->mux();
@@ -380,7 +380,9 @@ object if not given here:
 
 =head3 Listen
 
-Defines if this is should be treated as a listening socket, the default is no.
+Defines if this is should be treated as a listening socket, the default is to 
+auto detect if the socket is in listening mode or not. I should not be necessary
+to set this value.
 
 The socket must be set up for listening, which is easily done with 
 IO::Socket::INET:
@@ -619,9 +621,9 @@ sub add {
     
     $self->{fhs}{$fh}{meta} = $opts{Meta} if exists $opts{Meta};
 
-    $self->{listenfh}{$fh} = 1 if $opts{Listen};
-    
     $self->{fhs}{$fh}{type} = 'stream';
+    
+    $self->{listenfh}{$fh} = 1 if $opts{Listen};
 
     my $type = getsockopt($fh, SOL_SOCKET, SO_TYPE);
     $type = unpack("S", $type) if defined $type;
@@ -629,9 +631,16 @@ sub add {
     if(defined $type) {
         $self->{fhs}{$fh}{class} = 'socket';
         
+        # Check if the socket is set to listening
+        my $listening = getsockopt($fh, SOL_SOCKET, SO_ACCEPTCONN);
+        $listening = unpack("I", $listening) if defined $listening;
+        if($listening) {
+            $self->{listenfh}{$fh} = 1 if not exists $opts{Listen};
+        } 
+        
         if($type == SOCK_STREAM) { # type = 1
             # Add to find out when to send ready event.
-            if (!$opts{Listen}) {
+            if (!exists $self->{listenfh}{$fh}) {
                 $self->{writefh}->add($fh);
                 $self->{fhs}{$fh}{ready} = 0;
             }
