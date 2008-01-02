@@ -351,11 +351,31 @@ sub _get_event {
             # new connection
             if ($self->{auto_accept}) {
                 my $client = $fh->accept or next;
+                
+                my %cred;
+                # TODO: Support localhost TCP via: /proc/net/tcp
+                if(not defined $self->{fhs}{$fh}{family} 
+                        or $self->{fhs}{$fh}{family} eq 'unix') {
+                    
+                    my $rv = getsockopt($client, SOL_SOCKET, SO_PEERCRED);
+                    if(defined $rv) {
+                        my ($pid, $uid, $gid) = unpack('LLL', $rv);
+                        %cred = (pid => $pid, uid => $uid, gid => $gid);
+                        $self->{fhs}{$fh}{family} = 'unix';
+                    } else {
+                        $self->{fhs}{$fh}{family} = 'unknown';
+                    }
+                }
+                
                 $self->push_event({ type => 'accepted', fh => $client,
-                        parent_fh => $fh });
+                        parent_fh => $fh, %cred});
+                
+                # Add accepted client to IO::EventMux
                 $self->add($client, %{$self->{fhs}{$fh}{opts}}, Listen => 0);
+                
                 # Set ready as we already sent a connect.
                 $self->{fhs}{$client}{ready} = 1;
+            
             } else {
                 $self->push_event({ type => 'accepting', fh => $fh });
             }
@@ -630,7 +650,10 @@ sub add {
     # Check if it's a socket and not a pipe
     if(defined $type) {
         $self->{fhs}{$fh}{class} = 'socket';
-        
+       
+        # FIXME: found out what PF_* type the socket is.
+        # Maybe we could use getpeername() on accept() or connect()?
+
         # Check if the socket is set to listening
         my $listening = getsockopt($fh, SOL_SOCKET, SO_ACCEPTCONN);
         $listening = unpack("I", $listening) if defined $listening;
