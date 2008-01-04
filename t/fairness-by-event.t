@@ -1,6 +1,8 @@
 use strict;
 use warnings;
 
+# FIXME: Rewrite so it does not fail on *BSD or when the machine is slow. 
+
 use Test::More tests => 9;
 use IO::EventMux;
 

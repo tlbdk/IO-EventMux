@@ -4,14 +4,7 @@ use warnings;
 
 our $VERSION = '1.02';
 
-# TODO: Add support for sending ICMP error events:
-#   Google keywords: "out-of-band"
-#   Man pages: see IP_RECVERR in ip(7)
-#   Functions: Setsockopt on the socket to get it working.
-#              Read errors with recvmsg or recv
-#   Links: http://www.unix.org.ua/orelly/perl/prog3/ch16_05.htm
-#   http://homepages.cwi.nl/~aeb/linux/man2html/man2/socket.2.html
-#   SO_OOBINLINE : http://www.tutorialspoint.com/perl/perl_getsockopt.htm
+# FIXME: Rename Socket::MsgHdr to something else so we can publish the new module
 
 =head1 NAME
 
@@ -50,9 +43,19 @@ use IO::Select;
 use IO::Socket;
 use Socket;
 use Carp qw(carp cluck croak);
-use Fcntl;
-use POSIX qw(EWOULDBLOCK ECONNREFUSED ENOTCONN EAGAIN F_GETFL F_SETFL 
-O_NONBLOCK ETIMEDOUT ECONNRESET);
+use Errno qw(EPROTO ECONNREFUSED ETIMEDOUT EMSGSIZE ECONNREFUSED EHOSTUNREACH 
+             ENETUNREACH EACCES EAGAIN ENOTCONN ECONNRESET EWOULDBLOCK);
+use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
+
+use Socket::MsgHdr;
+use constant {
+    SOL_IP             => 0,
+    IP_RECVERR         => 11,
+    SO_EE_ORIGIN_NONE  => 0,
+    SO_EE_ORIGIN_LOCAL => 1,
+    SO_EE_ORIGIN_ICMP  => 2,
+    SO_EE_ORIGIN_ICMP6 => 3,
+};
 
 =head2 B<new([%options])>
 
@@ -123,6 +126,7 @@ sub new {
         auto_write    => 1,
         auto_read     => 1,
         read_size     => 65536,
+        errors        => 0,
         return_last   => 1,
         type          => 'stream',
         listenfh      => { },
@@ -298,6 +302,8 @@ sub _get_event {
 
     # buffers to flush?, can_write is set.
     for my $fh (@{$result[1]}) {
+        $self->push_event($self->socket_errors($fh)) 
+            if $self->{fhs}{$fh}{errors}; 
         if(exists $self->{fhs}{$fh}{ready}
             and $self->{fhs}{$fh}{ready} == 0) {
             $self->{fhs}{$fh}{ready} = 1;
@@ -324,7 +330,7 @@ sub _get_event {
                     
                     $self->push_event({ type => 'error',
                         fh => $fh, error => "get_event(can_write):$str",
-                        error_num => $error,
+                        errno => $error,
                     });
                 }
             }
@@ -345,8 +351,9 @@ sub _get_event {
 
     # incoming data, can_read is set.
     for my $fh (@{$result[0]}) {
+        $self->push_event($self->socket_errors($fh)) 
+            if $self->{fhs}{$fh}{errors}; 
         delete $self->{fhs}{$fh}{abs_timeout};
-
         if ($self->{listenfh}{$fh}) {
             # new connection
             if ($self->{auto_accept}) {
@@ -397,6 +404,7 @@ Add a socket to the internal list of handles being watched.
 
 The optional parameters for the handle will be taken from the IO::EventMux
 object if not given here:
+
 
 =head3 Listen
 
@@ -464,6 +472,24 @@ By default EventMux will try to read 65536 bytes from the file handle, setting
 this options to something smaller might help make it easier for EventMux to be
 fair about how it returns it's event, but will also give more overhead as more
 system calls will be required to empty a file handle.
+
+=head3 Errors
+
+By default EventMux will not deal with socket errors on non connected sockets
+such as a UDP socket in listening mode or where no peer has been defined. Or
+in other words whenever you use C<sendto()> on socket. When enabling error 
+handling, EventMux sets the socket to collect errors with the MSG_ERRQUEUE 
+option and collect errors with recvmsg() call.
+
+Errors are sent as errors events, eg: 
+
+  $event = {
+    data     => 'packet data',
+    dst_port => 'destination port',
+    from     => 'ip where the error is from',
+    errno    => 'error number',
+    dst_ip   => 'destination ip',
+  }
 
 =head3 Buffered
 
@@ -621,6 +647,14 @@ sub add {
                 @{$self->{fhs}{$fh}{buffered}};
         }
     }
+    
+    $self->{fhs}{$fh}{errors} = (exists $opts{Errors} ?
+        $opts{Errors} : $self->{errors});
+    
+    if($self->{fhs}{$fh}{errors}) {
+        # Set socket to recieve errors
+        setsockopt($fh, SOL_IP, IP_RECVERR, 1);
+    }
 
     $self->{fhs}{$fh}{auto_accept} = (exists $opts{ManualAccept} ?
         !$opts{ManualAccept} : $self->{auto_accept});
@@ -651,9 +685,6 @@ sub add {
     if(defined $type) {
         $self->{fhs}{$fh}{class} = 'socket';
        
-        # FIXME: found out what PF_* type the socket is.
-        # Maybe we could use getpeername() on accept() or connect()?
-
         # Check if the socket is set to listening
         my $listening = getsockopt($fh, SOL_SOCKET, SO_ACCEPTCONN);
         $listening = unpack("I", $listening) if defined $listening;
@@ -967,10 +998,15 @@ sub _send_dgram {
         my $rv = $self->_my_send($fh, $data, (defined $to ? $to : ()));
 
         if (!defined $rv) {
-            if ($! == POSIX::EWOULDBLOCK) {
+            if ($! == EWOULDBLOCK) {
                 # retry later
                 unshift @{$cfg->{outbuffer}}, $queue_item;
                 return $packets_sent;
+            
+            } elsif($cfg->{errors} and my @events = $self->socket_errors($fh)) {
+                unshift @{$cfg->{outbuffer}}, $queue_item;
+                push_event(@events);
+                next;
             } else {
                 die "Died because of unknown error: $!";
             }
@@ -1015,7 +1051,7 @@ sub _send_stream {
     
     # Check for undef or -1 as both can be error retvals 
     if (!defined $rv or $rv < 0) {
-        if ($! == POSIX::EWOULDBLOCK or $! == POSIX::EAGAIN) {
+        if ($! == EWOULDBLOCK or $! == EAGAIN) {
             return;
         
         } else {
@@ -1148,7 +1184,107 @@ sub nonblock {
     }
 }
 
-# Keeps reading from a file handle until POSIX::EWOULDBLOCK is returned
+=head2 B<socket_errors($socket)> 
+
+Read "MSG_ERRQUEUE" errors on socket 
+
+=cut
+
+sub socket_errors {
+    my ($self, $sock) = @_;
+    
+    my @results;
+    my $msgHdr = new Socket::MsgHdr(
+        buflen => 512,
+        controllen => 256,
+        namelen => 16,
+    );
+    
+    # Copy errors to msgHdr
+    my $old_errno = $!;
+    my $rv = recvmsg($sock, $msgHdr, MSG_ERRQUEUE);
+    if(not defined $rv) {
+        if($old_errno != $! and $! != EAGAIN) {
+            print "error(socket_errors):$!\n";
+        }
+        return;
+    }
+    
+    # Unpack errors
+    my @cmsg = $msgHdr->cmsghdr();
+    while (my ($level, $type, $data) = splice(@cmsg, 0, 3)) {
+        if($level == SOL_IP and $type == IP_RECVERR) {
+            my ($from, $dst_ip, $dst_port, $pkt);
+
+            # struct sock_extended_err from man recvmsg
+            my ($ee_errno, $ee_origin, $ee_type, $ee_code, $ee_pad, 
+                $ee_info, $ee_data, $ee_other) = unpack("ICCCCIIa*", $data);
+            
+            if($ee_origin == SO_EE_ORIGIN_NONE) {
+                print "error(socket_errors): origin is none??\n";
+                next;
+            
+            } elsif($ee_origin == SO_EE_ORIGIN_LOCAL) {
+                $from = 'localhost';
+
+            } elsif($ee_origin == SO_EE_ORIGIN_ICMP) {
+                # Get offender ip($from)(the one who sent the ICMP message)
+                # and $dst_ip and $dst_port from packet in ICMP packet.
+                ($from, $dst_ip, $dst_port) = (
+                    inet_ntoa((unpack_sockaddr_in($ee_other))[1]),
+                    inet_ntoa((unpack_sockaddr_in($msgHdr->name))[1]),
+                    (unpack_sockaddr_in($msgHdr->name))[0]
+                );
+                
+                # Get what's left of the packet
+                $pkt = $msgHdr->buf; 
+           
+            } elsif($ee_origin == SO_EE_ORIGIN_ICMP6) {
+                die "IPv6 not supported, patches welcome"; 
+            }
+
+            if($ee_errno == ECONNREFUSED) {
+                push(@results, {
+                    type => 'error',
+                    errno => $ee_errno, 
+                    from => $from, 
+                    dst_ip => $dst_ip,
+                    dst_port => $dst_port, 
+                    data => $pkt,
+                    fh => $sock,
+                });
+	        } elsif($ee_errno == EMSGSIZE) {
+                push(@results, {
+                    type => 'error',
+                    errno => $ee_errno, 
+                    mtu => $ee_info, 
+                    fh => $sock,
+                });
+            } elsif($ee_errno == ETIMEDOUT or $ee_errno == EPROTO 
+                    or $ee_errno == EHOSTUNREACH or $ee_errno == ENETUNREACH
+                    or $ee_errno == EACCES) {
+                push(@results, {
+                    type => 'error',
+                    fh => $sock,
+                    errno => $ee_errno, 
+                });
+            } else {
+                push(@results, {
+                    type => 'error',
+                    fh => $sock,
+                    error => 'unknown ee_errno: $ee_errno',
+                    errno => $ee_errno, 
+                });
+            }
+      
+        } else {
+            print "error(socket_errors): unknown type: $type and/or $level\n";
+        }
+    }
+    return @results;
+}
+
+# Keeps reading from a file handle until EWOULDBLOCK is returned
 sub _read_all {
     my ($self, $fh) = @_;
     my $cfg = $self->{fhs}{$fh};
@@ -1198,7 +1334,7 @@ sub _read_all {
                 }
                     
                 $self->push_event({ type => 'error', 
-                    error => "read_all:$str", error_num => $error,
+                    error => "read_all:$str", errno => $error,
                     fh => $fh,
                 });
 

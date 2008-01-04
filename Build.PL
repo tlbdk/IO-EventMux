@@ -13,6 +13,14 @@ my $builder = Module::Build->new(
     build_requires => {
         'Test::More' => 0,
     },
+    requires => {
+        'Carp'           => 0,
+        'Socket'         => 0,
+        'IO::Select'     => 0,
+        'IO::Socket'     => 0,
+        'Fcntl'          => 0,
+        'Socket::MsgHdr' => 0,
+    }, 
     add_to_cleanup => [ 
         'IO-EventMux-*',
         'blib',
