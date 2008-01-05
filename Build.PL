@@ -24,6 +24,7 @@ my $builder = Module::Build->new(
     }, 
     add_to_cleanup => [ 
         'IO-EventMux-*',
+        'Makefile',
         'blib',
     ],
 );

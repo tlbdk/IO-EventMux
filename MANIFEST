@@ -27,3 +27,7 @@ t/types.t
 t/udp-speed-noeventmux.t.skip
 t/udp-speed.t.skip
 t/udp.t
+t/00-use.t
+t/credentials.t
+t/errors.t
+
