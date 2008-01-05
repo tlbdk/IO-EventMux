@@ -3,17 +3,18 @@ use warnings;
 use Module::Build;
 
 my $builder = Module::Build->new(
-    module_name       => 'IO::EventMux',
-    license           => 'perl',
-    dist_author       => 'Jonas Jensen <jonas@infopro.dk>'
-                        .',Troels Liebe Bentsen <troels@infopro.dk>',
-    dist_version_from => 'lib/IO/EventMux.pm',
-    create_readme     => 1,
-    create_makefile_pl => 'traditional',
+    module_name        => 'IO::EventMux',
+    license            => 'perl',
+    dist_author        => 'Jonas Jensen <jonas@infopro.dk>'
+                         .',Troels Liebe Bentsen <troels@infopro.dk>',
+    dist_version_from  => 'lib/IO/EventMux.pm',
+    create_readme      => 1,
+    create_makefile_pl => 'passthrough',
     build_requires => {
         'Test::More' => 0,
     },
     requires => {
+        'perl'           => '>= 5.8.0',
         'Carp'           => 0,
         'Socket'         => 0,
         'IO::Select'     => 0,
