@@ -20,7 +20,7 @@ my $builder = Module::Build->new(
         'IO::Select'     => 0,
         'IO::Socket'     => 0,
         'Fcntl'          => 0,
-        'Socket::MsgHdr' => 0,
+        'IO::EventMux::Socket::MsgHdr' => 0,
     }, 
     add_to_cleanup => [ 
         'IO-EventMux-*',

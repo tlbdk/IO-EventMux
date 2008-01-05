@@ -47,7 +47,7 @@ use Errno qw(EPROTO ECONNREFUSED ETIMEDOUT EMSGSIZE ECONNREFUSED EHOSTUNREACH
              ENETUNREACH EACCES EAGAIN ENOTCONN ECONNRESET EWOULDBLOCK);
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
 
-use Socket::MsgHdr;
+use IO::EventMux::Socket::MsgHdr;
 use constant {
     SOL_IP             => 0,
     IP_RECVERR         => 11,
@@ -1194,7 +1194,7 @@ sub socket_errors {
     my ($self, $sock) = @_;
     
     my @results;
-    my $msgHdr = new Socket::MsgHdr(
+    my $msgHdr = new IO::EventMux::Socket::MsgHdr(
         buflen => 512,
         controllen => 256,
         namelen => 16,
