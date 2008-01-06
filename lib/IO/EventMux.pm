@@ -1385,7 +1385,7 @@ sub _read_all {
             #
             my $length = (unpack($pattern, $cfg->{inbuffer}))[0]+$offset;
             my $datastart = length(pack($pattern, $length));
-             
+            # FIXME: We might have a bug here, look in IO::Buffered::Size 
             while($length <= length($cfg->{inbuffer})) {
                 my %copy = %event;
                 $copy{'data'} = substr($cfg->{inbuffer},
