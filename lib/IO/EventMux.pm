@@ -44,7 +44,8 @@ use IO::Socket;
 use Socket;
 use Carp qw(carp cluck croak);
 use Errno qw(EPROTO ECONNREFUSED ETIMEDOUT EMSGSIZE ECONNREFUSED EHOSTUNREACH 
-             ENETUNREACH EACCES EAGAIN ENOTCONN ECONNRESET EWOULDBLOCK);
+             ENETUNREACH EACCES EAGAIN ENOTCONN ECONNRESET EWOULDBLOCK 
+             EHOSTUNREACH);
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
 
 use IO::EventMux::Socket::MsgHdr;
@@ -324,6 +325,8 @@ sub _get_event {
                         $str = "Connection timed out";
                     } elsif($error == ECONNRESET) {
                         $str = "Connection reset by peer";
+                    } elsif($error == EHOSTUNREACH) {
+                        $str = "No route to host";
                     } else {
                         die "Died because of unknown error code: $error";
                     }
