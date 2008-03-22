@@ -2,11 +2,29 @@ use strict;
 use warnings;
 
 use Test::More tests => 1;
-use IO::EventMux;
 use IO::Socket::INET;
 use IO::Select;
 use Benchmark qw(cmpthese);
 use Socket;
+
+use IO::EventMux;
+
+my ($pid1, $fh1) = send_test(10045);
+my ($pid2, $fh2) = send_test(10046);
+my $mux = IO::EventMux->new();
+$mux->add($fh2);
+
+print "IO::EventMux: $IO::EventMux::VERSION\n";
+
+cmpthese (-1, {
+    sendrecv1 => sub { sendrecv($fh1); },
+    eventmux  => sub { eventmux($mux, $fh2); },
+});
+
+kill 1, $pid1; waitpid($pid1, 0);
+kill 1, $pid2; waitpid($pid2, 0);
+
+exit;
 
 sub sendrecv {
     my ($fh) = @_;
@@ -24,25 +42,10 @@ sub eventmux {
     my ($mux, $fh) = @_;
     my $event = $mux->mux();
     if($event->{type} eq 'read') {
-        $mux->send($fh, $event->{data});
+        #$fh->send("hello\n");
+        $mux->send($fh, "hello\n");
     }
 }
-
-my ($pid1, $fh1) = send_test(10045);
-
-my ($pid2, $fh2) = send_test(10046);
-my $mux = IO::EventMux->new();
-$mux->add($fh2);
-
-cmpthese (-1, {
-    sendrecv1 => sub { sendrecv($fh1); },
-    eventmux  => sub { eventmux($mux, $fh2); },
-});
-
-kill 1, $pid1; waitpid($pid1, 0);
-kill 1, $pid2; waitpid($pid2, 0);
-
-exit;
 
 sub send_test {
     my ($port) = @_;

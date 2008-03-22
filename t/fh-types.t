@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 5;
+use Test::More tests => 8;
 use IO::EventMux;
 use IO::Socket::INET;
 use IO::Select;
@@ -40,6 +40,7 @@ my $tcpl = IO::Socket::INET->new(
     LocalAddr    => "127.0.0.1",
     ReuseAddr    => 1,    
     Proto        => 'tcp',
+    Listen       => 5,
     Blocking     => 0,
 ) or die "Could not open socket on (127.0.0.1:10046): $!\n";
 $mux->add($tcpl);
@@ -54,4 +55,17 @@ my $tcpc = IO::Socket::INET->new(
 ) or die "Could not open socket on (127.0.0.1:10046): $!\n";
 $mux->add($tcpc);
 is($mux->type($tcpc), 'stream', "TCP connecting: Type was detected as stream");
+
+socketpair(my $pair1, my $pair2, AF_UNIX, SOCK_STREAM, PF_UNSPEC);
+$mux->add($pair1);
+$mux->add($pair2);
+is($mux->type($pair1), 'stream', "Socket pair 1: Type was detected as stream");
+is($mux->type($pair2), 'stream', "Socket pair 2: Type was detected as stream");
+
+open my $echo, "echo hello|";
+$mux->add($echo);
+is($mux->type($echo), 'stream', "Pipe STDOUT: Type was detected as stream");
+close $echo;
+
+
 

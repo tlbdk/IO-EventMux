@@ -3,7 +3,7 @@ use warnings;
 
 use Test::More tests => 7;
 use IO::EventMux;
-#use IO::EventMuxOld;
+use IO::Buffered;
 
 my $PORT = 7007;
 
@@ -18,7 +18,7 @@ my $listener = IO::Socket::INET->new(
 ) or die "Listening on port $PORT: $!\n";
 
 print "listener:$listener\n";
-$mux->add($listener, Listen => 1, Buffered => ["Split", qr/\n/]);
+$mux->add($listener, Listen => 1, Buffered => new IO::Buffered(Split => qr/\n/));
 
 my $talker = IO::Socket::INET->new(
     Proto    => 'tcp',
@@ -27,7 +27,7 @@ my $talker = IO::Socket::INET->new(
     Blocking => 1,
 ) or die "Connecting to 127.0.0.1:$PORT: $!\n";
 print "talker:$talker\n";
-$mux->add($talker, Buffered => ["Regexp", qr/(.*\n)/]);
+$mux->add($talker, Buffered => new IO::Buffered(Regexp => qr/(.*\n)/));
 
 my @dataset = ("data 1\n", "data 2\n", "data 3");
 my @dataset_connecter;

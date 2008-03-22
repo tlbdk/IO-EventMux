@@ -34,6 +34,7 @@ if($pid == 0) {
 }
 
 while (my $event = $mux->mux()) {
+    use Data::Dumper; print Dumper($event);
     if($event->{type} eq 'read' and $event->{data} eq "hello\n") {
         pass("Socket was detected as UDP and we got our data");
     } else {

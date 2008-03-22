@@ -30,6 +30,7 @@ while(my $event = $mux->mux()) {
             dst_port => 1234,
             type     => 'error',
             errno    => 111,
+            error    => 'Connection refused',
             dst_ip   => '127.0.0.1',
         }, "We got a correct error event");
     last;

@@ -19,8 +19,9 @@ use warnings;
 #
 #
 #
-use Test::More tests => 2;
+use Test::More tests => 4;
 use IO::EventMux;
+use IO::Buffered;
 
 my $PORT = 7007;
 
@@ -35,7 +36,7 @@ my $listener = IO::Socket::INET->new(
 ) or die "Listening on port $PORT: $!\n";
 
 print "listener:$listener\n";
-$mux->add($listener, Listen => 1, Buffered => ["Regexp", qr/(.*)\n/]);
+$mux->add($listener, Listen => 1, Buffered => new IO::Buffered(Regexp => qr/(.*?)\n/));
 
 my $talker = IO::Socket::INET->new(
     Proto    => 'tcp',
@@ -46,46 +47,38 @@ my $talker = IO::Socket::INET->new(
 print "talker:$talker\n";
 $mux->add($talker);
 $mux->send($talker, ("data 1\n", "data 2\n", "data 3"));
-$mux->close($talker);
 
-my $timeout = 0;
-my $clients = 0;
-my @eventorder;
+my $child;
+my $timeout = 10;
+my $clients = 2;
+my %eventorder;
 while(1) {
     my $event = $mux->mux($timeout);
-    my $type  = $event->{type};
     my $fh    = ($event->{fh} or '');
-    my $data  = ($event->{data} or '');
 
-    print("$fh $type: '$data'\n");
-    push(@eventorder, $type);
-
-    if($type eq 'ready') {
-        $clients++;
+    #use Data::Dumper;print Dumper($event);
     
-    } elsif($type eq 'accepted') {
-        $clients++;
-        $timeout = 1;
+    push(@{$eventorder{$fh}}, $event->{type});
+
+    if($event->{type} eq 'ready') {
     
-    } elsif($type eq 'closing') {
-
-    } elsif($type eq 'closed') {
-        if(--$clients == 0 and $timeout > 0) { last }
-        ok($event->{missing} == 0, "Missing is 0 as it should be")
-
-    } elsif($type eq 'read') {
-
-    } elsif($type eq 'read_last') {
+    } elsif($event->{type} eq 'accepted') {
+        $child = $event->{fh};
     
-    } elsif($type eq 'sent' and $fh eq $talker) {
+    } elsif($event->{type} eq 'closing') {
 
-    } elsif($type eq 'timeout') {
+    } elsif($event->{type} eq 'closed') {
+        is($event->{missing}, 0, "missing should be 0");
+        print "$clients\n";
+        if(--$clients == 0) { last }
     
-    } else {
-        die("Unhandled event $type");
+    } elsif($event->{type} eq 'sent' and $fh eq $talker) {
+        $mux->close($talker);
     }
 }
 
-is_deeply(\@eventorder, 
-    [qw(ready accepted sent closing closed read read read_last 
-    closing closed)], "Event order is correct");
+is_deeply($eventorder{$talker}, 
+    [qw(ready sent sent closing closed)], "Event order for talker is correct");
+is_deeply($eventorder{$child}, 
+    [qw(accepted read read read_last closing closed)], 
+    "Event order for listener is correct");

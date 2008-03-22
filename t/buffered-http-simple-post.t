@@ -3,7 +3,10 @@ use warnings;
 
 use Test::More tests => 2;
 use IO::EventMux;
+use IO::Buffered;
 use Data::Dumper;
+
+# FIXME: Add something to the data stream so buffering matters ie. multi request pr. fh.
 
 my $mux = IO::EventMux->new();
 
@@ -41,7 +44,7 @@ my @data = (
     "get_commits></SOAP-ENV:Body></SOAP-ENV:Envelope>");
 
 my $goodfh = string_fh(@data);
-$mux->add($goodfh, Buffered => ['HTTP']);
+$mux->add($goodfh, Buffered => new IO::Buffered(HTTP => 1));
 
 my %types;
 while ($mux->handles > 0) {

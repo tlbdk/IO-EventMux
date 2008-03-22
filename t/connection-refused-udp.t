@@ -23,7 +23,7 @@ while(1) {
     use Data::Dumper; print Dumper($event);
     
     if($event->{type} eq 'error') {
-        if($event->{errno} == 111) {
+        if($event->{error} =~ /Connection refused/) {
             pass "We got a connection refused";
         } else {
             fail "We did not get a connection error";

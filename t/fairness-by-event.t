@@ -5,6 +5,7 @@ use warnings;
 
 use Test::More tests => 9;
 use IO::EventMux;
+use IO::Buffered;
 
 my $mux = IO::EventMux->new(ReadPriorityType => ['FairByEvent']);
 
@@ -23,7 +24,7 @@ sub create_writer {
 
     close $writerOUT;
     $mux->add($readerOUT, 
-        Buffered => ["Split", qr/\n/],
+        Buffered => new IO::Buffered(Split => qr/\n/),
         ReadSize => 4,
         Meta => { pid => $pid },
     );

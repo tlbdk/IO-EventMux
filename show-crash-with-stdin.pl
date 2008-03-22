@@ -2,21 +2,27 @@
 use strict;
 use warnings;
 
-# This example program shows how to wait for a child process and listen to it's
-# STDERR, STDOUT and send data to it's STDIN using EventMux. It waits for the 
-# child to close its stdout, which for most programs is evidence that it is 
-# terminating. Then it calls waitpid to collect the child's exit status and 
-# prevent it from becoming a zombie. This call to waitpid is blocking in
-# theory, but it will happen instantly for well-behaved children.
-
 use lib "lib";
+use Carp;
 use IO::EventMux;
+use IO::Buffered;
 
-my $mux = IO::EventMux->new;
+$SIG{PIPE} = sub { croak "Broken pipe"; };
+$SIG{__WARN__} = sub { croak @_; };
 
 pipe my $readerOUT, my $writerOUT or die;
 pipe my $readerERR, my $writerERR or die;
 pipe my $readerIN, my $writerIN or die;
+
+#eval {
+#    local($SIG{__WARN__})=sub{};
+#    sysread($writerOUT, my $data, 10);
+#    croak $!;
+#};
+#if($@ =~ /Bad file descriptor/) {
+#    print "$@\n";
+#}
+#exit;
 
 my $pid = fork;
 if ($pid == 0) {
@@ -33,27 +39,39 @@ if ($pid == 0) {
 close $writerOUT;
 close $writerERR;
 close $readerIN;
-$mux->add($readerOUT, Buffered => ["Split", qr/\n/]);
-$mux->add($readerERR, Buffered => ["Split", qr/\n/]);
-$mux->add($writerIN, Buffered => ["Split", qr/\n/]);
+
+$readerOUT->autoflush(1);
+$readerERR->autoflush(1);
+$readerIN->autoflush(1);
+
+my $mux = IO::EventMux->new;
+$mux->add($readerOUT, Buffered => new IO::Buffered(Split => qr/\n/));
+$mux->add($readerERR, Buffered => new IO::Buffered(Split => qr/\n/));
+$mux->add($writerIN, Buffered => new IO::Buffered(Split => qr/\n/));
 
 print "OUT($readerOUT)\n";
 print "ERR($readerERR)\n";
 print "IN($writerIN)\n";
 
-
 while (my $event = $mux->mux) {
-    print "Got event: $event->{type} : $event->{fh} \n";
-    print "OUT:$event->{data}\n" if $event->{type} eq 'read';
-    
+    use Data::Dumper; print Dumper($event);
+   
+    print "$event->{data}\n" if defined $event->{data};
+
     if($event->{type} eq 'ready') {
+        #$mux->send($event->{fh}, "?\n");
         $mux->send($event->{fh}, "quit\n");
     }
 
-    if($event->{error}) {
-        sleep 100;
-        exit;
+    if($event->{type} eq 'sent') {
+        $mux->send($event->{fh}, "?\n");
+        #$mux->close($event->{fh});
     }
+    
+    if($event->{fh} eq $readerOUT and $event->{type} eq 'closed') {
+        #exit;
+    }
+
 }
 
 # vim: et tw=79 sw=4 sts=4

@@ -4,6 +4,9 @@ use warnings;
 use Test::More tests => 2;
 use IO::EventMux;
 use Data::Dumper;
+use IO::Buffered;
+
+# FIXME: Add something where buffering would matter, ie try changing to none
 
 my $mux = IO::EventMux->new();
 
@@ -23,7 +26,7 @@ my $data = "GET /soap.php?WSDL HTTP/1.0\x0d\x0a".
            "Host: localhost\x0d\x0a\x0d\x0a";
 
 my $goodfh = string_fh($data);
-$mux->add($goodfh, Buffered => ['HTTP']);
+$mux->add($goodfh, Buffered => new IO::Buffered(HTTP => 1));
 
 my %types;
 while ($mux->handles > 0) {
@@ -32,7 +35,11 @@ while ($mux->handles > 0) {
 
     if($event->{type} eq 'read') {
         $types{$event->{fh}}{data} .= $event->{data};
-    } 
+    } else {
+        print "$event->{type}: '".
+            (defined $event->{data} ? $event->{data} : 'undef')
+        ."'\n";
+    }
 }
 
 is($types{$goodfh}{types}, join("", qw(read closing closed)),

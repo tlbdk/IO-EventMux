@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 3;
+use Test::More tests => 1;
 
 use IO::EventMux;
 use File::Temp qw(tempfile);
@@ -34,15 +34,22 @@ while(1) {
     my $event = $mux->mux(5);
 
     #print "FH:".($fhs{$event->{fh}} or 'new') ."\n" if exists $event->{fh};
-    #use Data::Dumper; print Dumper($event);
+    use Data::Dumper; print Dumper($event);
     
     if($event->{type} eq 'accepted') {
-        is($event->{pid}, $$, "PID is correct");
-        is($event->{gid}, (split(/\s/,$())[0], "GID is correct");
-        is($event->{uid}, $<, "UID is correct");
+        is_deeply($event, {
+            pid => $$,
+            gid => (split(/\s/,$())[0],
+            uid => $<,
+            parent_fh => $listener,
+            fh => $event->{fh},
+            type => 'accepted',
+        }, "We got back credentials");
         exit;
     
     } elsif($event->{type} eq 'error') {
+        use Data::Dumper;
+        print Dumper($event);
         fail "Got error";
         exit;
 

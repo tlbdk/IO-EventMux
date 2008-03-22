@@ -4,6 +4,7 @@ use warnings;
 use Test::More tests => 2;
 
 use IO::EventMux;
+use IO::Buffered::Split;
 
 my $mux = IO::EventMux->new();
 
@@ -21,8 +22,8 @@ sub string_fh {
 my $goodfh = string_fh("Hello\nHello\nLast");
 my $failfh = string_fh("Hello\nHello!\nLast");
 
-$mux->add($goodfh, Buffered => ['Split', qr/\n/, 6]);
-$mux->add($failfh, Buffered => ['Split', qr/\n/, 6]);
+$mux->add($goodfh, Buffered => new IO::Buffered::Split(qr/\n/, MaxSize => 16));
+$mux->add($failfh, Buffered => new IO::Buffered::Split(qr/\n/, MaxSize => 16));
 
 my %types;
 while ($mux->handles > 0) {
@@ -35,6 +36,6 @@ while ($mux->handles > 0) {
 is($types{$goodfh}, join("", qw(read read read closing closed)),
     "Succeeds when it should");
 
-is($types{$failfh}, join("", qw(read error read_last closing closed)),
+is($types{$failfh}, join("", qw(error read_last closing closed)),
     "Fails when it should");
 

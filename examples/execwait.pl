@@ -11,6 +11,11 @@ use warnings;
 
 use lib "lib";
 use IO::EventMux;
+use IO::Buffered;
+use Carp;
+
+$SIG{PIPE} = sub { croak "Broken pipe"; };
+$SIG{__WARN__} = sub { croak @_; };
 
 my $mux = IO::EventMux->new;
 
@@ -33,9 +38,10 @@ if ($pid == 0) {
 close $writerOUT;
 close $writerERR;
 close $readerIN;
-$mux->add($readerOUT, Buffered => ["Split", qr/\n/]);
-$mux->add($readerERR, Buffered => ["Split", qr/\n/]);
-$mux->add($writerIN, Buffered => ["Split", qr/\n/]);
+
+$mux->add($readerOUT, Buffered => new IO::Buffered(Split => qr/\n/));
+$mux->add($readerERR, Buffered => new IO::Buffered(Split => qr/\n/));
+$mux->add($writerIN, Buffered => new IO::Buffered(Split => qr/\n/));
 
 print "OUT($readerOUT)\n";
 print "ERR($readerERR)\n";
