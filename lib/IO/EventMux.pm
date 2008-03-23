@@ -903,7 +903,6 @@ Return socket type.
 sub socket_type {
     my ($self, $fh) = @_;
    
-    print "$fh\n";
     my $ptype = getsockopt($fh, SOL_SOCKET, SO_TYPE);
     if(defined $ptype) {
         my $type = unpack("S", $ptype);
