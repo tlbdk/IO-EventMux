@@ -765,7 +765,9 @@ sub _send_dgram {
 
     while (my $queue_item = shift @{$cfg->{outbuffer}}) {
         my ($data, $to) = @$queue_item;
-       
+      
+        croak "Trying to send undef" if !defined $data;
+
         my $rv = eval { $write->($fh, $data, (defined $to ? $to : ())); };
         if ($@ =~ /Resource temporarily unavailable/) {
             # retry later
