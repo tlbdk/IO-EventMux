@@ -108,13 +108,14 @@ Nothing happened and timeout occurred.
 
 =item error
 
-An error occurred in connection with the fh handle, such as 
+An error occurred in connection with the file handle, such as 
 "connection refused", etc.
 
 =item accepted
 
 A new client connected to a listening socket and the connection was accepted by
-EventMux. The listening socket file handle is in the 'parent_fh' key.
+EventMux. The listening socket file handle is in the 'parent_fh' key. If the 
+file handle is a unix domain socket the credentials of the user connection will be available in the keys; 'pid', 'uid' and 'gid'. 
 
 =item ready 
 
@@ -140,15 +141,9 @@ C<Socket::unpack_sockaddr_in()>.
 
 =item read_last
 
-A socket last data before it was closed did not match the buffering rules, this
-can happen with the following buffering types: Size, FixedSize and Regexp. And
-is generally an indicator that you received data that you did not expect.
+A socket last data before it was closed did not match the buffering rules, as defined by the IO::Buffered type given. The read_last type contains the result of a call to C<read_last()> on the chosen buffer type.
 
-The Buffering types: "Split", "Disconnect" and "None" expects this and will
-return a read instead.
-
-The default is not to return read_last, in the sense that "None" is the default 
-buffering type.
+The default is not to return read_last and if no buffer is set read will contain this information.
 
 =item sent
 
@@ -317,11 +312,10 @@ object if not given here:
 
 =head3 Listen
 
-Defines if this is should be treated as a listening socket, the default is to 
-auto detect if the socket is in listening mode or not. I should not be necessary
-to set this value.
+Defines if the file handle should be treated as a listening socket, the default
+is to auto detect this. I should not be necessary to set this value.
 
-The socket must be set up for listening, which is easily done with 
+The socket must be set up for listening, which is easily done with
 IO::Socket::INET:
 
   my $listener = IO::Socket::INET->new(
@@ -341,22 +335,22 @@ Defaults to "stream".
 =head3 ManualAccept
 
 If a connection comes in on a listening socket, it will by default be accepted
-automatically, and mux() will return a 'connect' event.  If ManualAccept is set
-an 'accept' event will be returned instead, and the user code must handle it
+automatically, and C<mux()> will return a 'connect' event.  If ManualAccept is set
+an 'accepting' event will be returned instead, and the user code must handle it
 itself.
 
   $mux->add($my_fh, ManualAccept => 1);
 
 =head3 ManualWrite
 
-By default EventMux handles nonblocking writing and you should use 
-$mux->send($fh, $data) or $mux->sendto($fh, $addr, $data) to send your data, 
-but if some reason you send data yourself you can tell EventMux not to do 
-writing for you and generate a 'can_write' event for you instead.
+By default EventMux handles nonblocking writing and you should use
+C<$mux->send($fh, $data)> or C<$mux->sendto($fh, $addr, $data)> to send your data,
+but if for some reason you send data yourself you can tell EventMux not to do
+writing for you and generate a 'can_write' event instead.
     
   $mux->add($my_fh, ManualWrite => 1);
 
-In both cases you can use send() to write data to the file handle.
+In both cases you can use C<send()> to write data to the file handle.
 
 Note: If both ManualRead and ManualWrite is set, EventMux will not set the 
 socket to nonblocking. 
@@ -370,27 +364,27 @@ you can have EventMux generate a 'can_read' event for you instead.
   $mux->add($my_fh, ManualRead => 1);
 
 Never read or recv on the file handle. When the socket becomes readable, a
-C<can_read> event is returned.
+C<can_read()> event is returned.
 
 Note: If both ManualRead and ManualWrite is set, EventMux will not set the 
 socket to nonblocking. 
 
 =head3 ReadSize
 
-By default EventMux will try to read 65536 bytes from the file handle, setting
+By default IO::EventMux will try to read 65536 bytes from the file handle, setting
 this options to something smaller might help make it easier for EventMux to be
 fair about how it returns it's event, but will also give more overhead as more
 system calls will be required to empty a file handle.
 
 =head3 Errors
 
-By default EventMux will not deal with socket errors on non connected sockets
+By default IO::EventMux will not deal with socket errors on non connected sockets
 such as a UDP socket in listening mode or where no peer has been defined. Or
 in other words whenever you use C<sendto()> on socket. When enabling error 
-handling, EventMux sets the socket to collect errors with the MSG_ERRQUEUE 
-option and collect errors with recvmsg() call.
+handling, IO::EventMux sets the socket to collect errors with the MSG_ERRQUEUE 
+option and collect errors with C<recvmsg()> call.
 
-Errors are sent as errors events, eg: 
+Errors are sent as error events with a little more information than normal, eg: 
 
   $event = {
     data     => 'packet data',
@@ -401,8 +395,17 @@ Errors are sent as errors events, eg:
 
 =head3 Meta
 
-An optional scalar piece of metadata for the file handle.  Can be retrieved and
+An optional scalar piece of metadata for the file handle. Can be retrieved and
 manipulated later with meta()
+
+=head3 Buffered
+
+IO::EventMux supports buffering of data before generating events, this can be used to only return events when a "complete" event is done. For this IO::EventMux uses IO::Buffered. 
+
+  # Would only return when a complete line 
+  $mux->add($goodfh, Buffered => new IO::Buffered(Split => qr/\n/));
+
+Read more here: L<IO::Buffered>
 
 =cut
 
@@ -558,8 +561,7 @@ sub class {
 
 =head2 B<meta($fh, [$newval])>
 
-Set or get a piece of metadata on the filehandle.  This can be any scalar
-value.
+Set or get a piece of metadata on the filehandle. This can be any scalar value.
 
 =cut
 
@@ -621,7 +623,7 @@ sub close {
 =head2 B<kill($fh)>
 
 Closes a file handle without giving time to finish any outstanding operations. 
-Returns a 'closed' event, delete all buffers and does not keep 'Meta' data.
+Returns a 'closed' event, deletes all buffers and does not keep 'Meta' data.
 
 Note: Does not return the 'read_last' event.
 
@@ -1063,14 +1065,14 @@ B<Working with PIPE's:>
 When the other end of a pipe closes it's end, signals can get thrown. To handle
 this a signal handler needs to be defined:
 
-  # Need when writing to a broken pipe 
+  # Needed when writing to a broken pipe 
   $SIG{PIPE} = sub {
      croak "Broken pipe";
  };
 
 B<Getting rid of 'Filehandle ... opened only for output'> 
 
-  # Need as sysread() throws warnings when STDIN gets closed by the child
+  # Needed as sysread() throws warnings when STDIN gets closed by the child
   $SIG{__WARN__} = sub {
      croak @_;    
   };
@@ -1083,7 +1085,8 @@ Jonas Jensen <jonas@infopro.dk>, Troels Liebe Bentsen <troels@infopro.dk>
 
 =head1 COPYRIGHT AND LICENCE
 
-Copyright 2006-2007: Troels Liebe Bentsen, Jonas Jensen
+Copyright 2006-2008: Troels Liebe Bentsen
+Copyright 2006-2007: Jonas Jensen
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

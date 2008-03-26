@@ -6,6 +6,12 @@ Version 2.00 ()
  * Add new "Errors" options to add() that returns ICMP errors as error events.
  * Close no longer waits for send buffer to empty
  * Drop support for timeouts pr. file handle
+ * Convert to new IO::Buffered and drop support for old Buffered API.
+ * Added a lot more error handling, IO::EventMux now croaks when given wrong
+   in a lot of cases.
+ * Add credential information to unix sockets on accepted event.
+ * Mux now croaks on negativ timeout value
+
 
 Version 1.02 (Sun Dec 30 2007)
  * Make push_event public, so fake events can be pushed to the queue.
