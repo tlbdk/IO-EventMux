@@ -227,6 +227,7 @@ sub _get_event {
                         });
                     }
                 }
+            
             } else {            
                 $self->push_event({ type => 'ready', fh => $fh });
             }
@@ -823,6 +824,10 @@ sub _send_stream {
         $self->kill($fh);
         return;
     
+    } elsif($@ =~ /Cannot determine peer address/ and $cfg->{ready} == 0) {
+        # To soon to send data, retry when we get a ready
+        return;
+
     } elsif($@) {
         $self->push_event({ type => 'error', error => "$@", fh => $fh });   
         return;
@@ -837,7 +842,7 @@ sub _send_stream {
         $cfg->{outbuffer} = '';
         $self->{writefh}->remove($fh);
 
-        if(exists $cfg->{ready} and $cfg->{ready} == 0) {
+        if($cfg->{ready} == 0) {
             $cfg->{ready} = 1;
             $self->push_event({ type => 'ready', fh => $fh });
         }
