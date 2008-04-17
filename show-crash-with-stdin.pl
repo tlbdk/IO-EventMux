@@ -2,6 +2,8 @@
 use strict;
 use warnings;
 
+# FIXME: Make in to test
+
 use lib "lib";
 use Carp;
 use IO::EventMux;
