@@ -65,7 +65,12 @@ is($mux->type($pair2), 'stream', "Socket pair 2: Type was detected as stream");
 open my $echo, "echo hello|";
 $mux->add($echo);
 is($mux->type($echo), 'stream', "Pipe STDOUT: Type was detected as stream");
-close $echo;
+
+use Data::Dumper;
+print Dumper([stat($echo)]);
+print Dumper([stat($pair1)]);
+print Dumper([stat($udpc)]);
+print Dumper([stat($tcpc)]);
 
 
 

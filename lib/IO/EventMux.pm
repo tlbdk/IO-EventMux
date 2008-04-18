@@ -435,6 +435,7 @@ sub add {
         opts => \%opts,
         inbuffer => (defined $opts{Buffered} ? $opts{Buffered} : undef),
         meta => (exists $opts{Meta} ? $opts{Meta} : undef),
+        mode => 'normal',
     };
 
     my $cfg = $self->{fhs}{$fh}; 
@@ -1031,9 +1032,35 @@ sub _read_events {
         push(@{$self->{actionq}}, sub { $self->kill($fh); }); 
         $self->push_event({ type => 'closing', fh => $fh });
         return;
+    }
 
-    } elsif($buffer) {
+    # FIXME: Finish implementing
+    if($cfg->{mode} eq 'recvfile') {
+        $cfg->{recvbuffer} .= $data;
+        my $recvfh = $cfg->{recvfh}; 
+        my $chunksize = min($cfg->{recvlength}, $cfg->{chunksize});
+
+        if($chunksize and $cfg->{recvbuffer} >= $chunksize) {
+            my $chunk = substr($data, 0, $chunksize);
+            substr($data, 0, $cfg->{chunksize}) = '';
+
+            if(my $filter = $cfg->{recvfilter}) {
+                $chunk = $filter->($chunk);
+            }
+            
+            print {$recvfh} $chunk;
+        }
+
+        $cfg->{recvlength} -= $chunksize;
+        if($cfg->{recvlength} <= 0) {
+            $cfg->{mode} = 'normal';
         
+        } else {
+            return 1;
+        }
+    }
+
+    if($buffer) {    
         eval { $buffer->write($data); };
         if($@) {
             # Push buffer overflow error or other error to the event queue
@@ -1062,7 +1089,6 @@ sub _read_events {
         return 1;
     }
 }
-
 
 =head2 NOTES
 
