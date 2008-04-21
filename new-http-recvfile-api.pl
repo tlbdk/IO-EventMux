@@ -57,7 +57,7 @@ while(1) {
     } elsif($event->{type} eq 'read') {
         my $headers = parse_header($event->{data});
 
-        if($event->{status} eq '302') {
+        if($headers->{status} eq '302') {
             if($headers->{Location} =~ m{
                 (?:(http[s]?)://([^/]+))? # Match domain part if it exists
                 (.*?) # Match document part if it exists
