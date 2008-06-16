@@ -569,6 +569,7 @@ Set or get a piece of metadata on the filehandle. This can be any scalar value.
 
 sub meta {
     my ($self, $fh, $newval) = @_;
+    return if !defined $fh; 
 
     if (@_ > 2) {
         $self->{fhs}{$fh}{meta} = $newval;
@@ -676,6 +677,30 @@ sub buflen {
 
     return $cfg->{outbuffer} ? length($cfg->{outbuffer}) : 0;
 }
+
+
+=head2 B<recvdata($fh, $length)>
+
+Queues @data to be written to the file handle $fh. Can only be used when ManualWrite is
+off (default).
+
+=cut
+
+sub recvdata {
+    my ($self, $fh, $length) = @_;
+    my $cfg = $self->{fhs}{$fh}; 
+    
+    if(my $buffer = $cfg->{inbuffer}) {
+        $cfg->{recvlength} = $length;
+        print "length: $length\n";
+        foreach my $record ($buffer->read($cfg->{recvlength})) {
+            $self->push_event({ type => 'read', fh => $fh, 
+                data => $record });
+            delete $cfg->{recvlength}; 
+        }
+    }
+}
+
 
 =head2 B<send($fh, @data)>
 
@@ -1051,6 +1076,7 @@ sub _read_events {
             foreach my $record ($buffer->read($cfg->{recvlength})) {
                 $self->push_event({ type => 'read', fh => $fh, 
                     data => $record });
+                delete $cfg->{recvlength}; 
             }
         }
         
