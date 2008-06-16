@@ -1032,35 +1032,8 @@ sub _read_events {
         push(@{$self->{actionq}}, sub { $self->kill($fh); }); 
         $self->push_event({ type => 'closing', fh => $fh });
         return;
-    }
-
-    # FIXME: Finish implementing
-    if($cfg->{mode} eq 'recvfile') {
-        $cfg->{recvbuffer} .= $data;
-        my $recvfh = $cfg->{recvfh}; 
-        my $chunksize = min($cfg->{recvlength}, $cfg->{chunksize});
-
-        if($chunksize and $cfg->{recvbuffer} >= $chunksize) {
-            my $chunk = substr($data, 0, $chunksize);
-            substr($data, 0, $cfg->{chunksize}) = '';
-
-            if(my $filter = $cfg->{recvfilter}) {
-                $chunk = $filter->($chunk);
-            }
-            
-            print {$recvfh} $chunk;
-        }
-
-        $cfg->{recvlength} -= $chunksize;
-        if($cfg->{recvlength} <= 0) {
-            $cfg->{mode} = 'normal';
-        
-        } else {
-            return 1;
-        }
-    }
-
-    if($buffer) {    
+    
+    } elsif($buffer) {    
         eval { $buffer->write($data); };
         if($@) {
             # Push buffer overflow error or other error to the event queue
@@ -1075,7 +1048,7 @@ sub _read_events {
             return;
         
         } else {
-            foreach my $record ($buffer->read()) {
+            foreach my $record ($buffer->read($cfg->{recvlength})) {
                 $self->push_event({ type => 'read', fh => $fh, 
                     data => $record });
             }
