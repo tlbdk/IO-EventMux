@@ -9,6 +9,8 @@ use Fcntl qw(:mode);
 
 # http://svn.linuxvirtualserver.org/repos/tcpsp/
 
+# git://git.kernel.dk/data/git/splice
+
 # TODO: Use in IO::EventMux
 # S_IFREG S_IFDIR S_IFLNK S_IFBLK S_IFCHR S_IFIFO S_IFSOCK S_IFWHT S_ENFMT
 
