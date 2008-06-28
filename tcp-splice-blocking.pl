@@ -7,8 +7,13 @@ use Socket;
 use Data::Dumper;
 use Fcntl qw(:mode);
 
+# Example on using splice:
 # http://svn.linuxvirtualserver.org/repos/tcpsp/
 
+# Guide to programming XS:
+# http://world.std.com/~swmcd/steven/perl/pm/xs/intro/
+
+# More Examples on using splice(Good)
 # git://git.kernel.dk/data/git/splice
 
 # TODO: Use in IO::EventMux
