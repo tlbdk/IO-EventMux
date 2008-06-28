@@ -528,6 +528,37 @@ sub add {
     }
 }
 
+=head2 B<set()>
+
+Set new options on a fh in IO::EventMux, currently only Buffered options is handled
+
+=cut
+
+sub set {
+    my ($self, $fh, %opts) = @_;
+    
+    croak "undefined file handle given" if !defined $fh;
+    croak "$fh not handled by IO::EventMux" if !exists $self->{fhs}{$fh};
+    croak "Buffered is not a IO::Buffered object" if defined $opts{Buffered} 
+        and !(blessed($opts{Buffered}) 
+        and $opts{Buffered}->isa('IO::Buffered'));
+
+    my $cfg = $self->{fhs}{$fh};
+    my $inbuffer = $cfg->{inbuffer}; 
+
+    if(exists $opts{Buffered}) { 
+        if(defined $opts{Buffered}) {
+            if(blessed($inbuffer)) {
+                $opts{Buffered}->write($inbuffer->buffer());
+            } else {
+                $opts{Buffered}->write($inbuffer);
+            }
+        }
+        $cfg->{inbuffer} = $opts{Buffered};
+    }
+}
+
+
 =head2 B<handles()>
 
 Returns a list of file handles managed by this object.
