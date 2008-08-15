@@ -829,6 +829,10 @@ sub _send_dgram {
         croak "Trying to send undef" if !defined $data;
 
         my $rv = eval { $write->($fh, $data, (defined $to ? $to : ())); };
+           
+        # Clean up error
+        $@ =~ s/\s*at \S+ line [\d\.]+\n//g;
+
         if ($@ =~ /Resource temporarily unavailable/) {
             # retry later
             unshift @{$cfg->{outbuffer}}, $queue_item;
@@ -840,7 +844,6 @@ sub _send_dgram {
             next;
         
         } elsif($@) { 
-            unshift @{$cfg->{outbuffer}}, $queue_item;
             $self->push_event({ type => 'error', error => "$@", fh => $fh, 
                     receiver => $to });   
             return;
