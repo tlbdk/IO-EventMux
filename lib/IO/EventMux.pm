@@ -839,6 +839,12 @@ sub _send_dgram {
             $self->push_event(@events);
             next;
         
+        } elsif($@) { 
+            unshift @{$cfg->{outbuffer}}, $queue_item;
+            $self->push_event({ type => 'error', error => "$@", fh => $fh, 
+                    receiver => $to });   
+            return;
+        
         } elsif ($rv < length $data) {
             die "Incomplete datagram sent (should not happen)";
 
