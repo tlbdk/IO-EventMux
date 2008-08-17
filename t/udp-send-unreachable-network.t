@@ -20,12 +20,17 @@ $mux->sendto($udpnc, $receiver, "hello");
 
 my $event = $mux->mux();
 
-pass("We don't not die so we handle network is unreachable on UDP");
+pass("We did not die, so we handle network is unreachable on UDP");
 
-is_deeply($event, 
-    { receiver => $receiver, 
-        fh => $udpnc, 
-        error => "Network is unreachable",
-        type => 'error',
-    },
-"We get a correct event back");
+if(($event->{error} or '') eq "Network is unreachable") {
+    is_deeply($event, 
+        { receiver => $receiver, 
+            fh => $udpnc, 
+            error => "Network is unreachable",
+            type => 'error',
+        }, "We get a correct event back");
+} elsif(($event->{error} or '') eq "Permission denied") {
+    pass "We are not allowed to send to 255.255.255.255 and this is OK";
+} else {
+    fail "We did not get an error???";
+}
