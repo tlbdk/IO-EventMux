@@ -803,8 +803,6 @@ sub sendto {
     
         if(length $cfg->{outbuffer}) {
             $self->{writefh}->add($fh);
-        } else {
-            $self->push_event({type => 'sent', fh => $fh});
         }
 
         return $rv;

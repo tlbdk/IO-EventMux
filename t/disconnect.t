@@ -78,7 +78,7 @@ while(1) {
 }
 
 is_deeply($eventorder{$talker}, 
-    [qw(ready sent sent closing closed)], "Event order for talker is correct");
+    [qw(ready sent closing closed)], "Event order for talker is correct");
 is_deeply($eventorder{$child}, 
     [qw(accepted read read read_last closing closed)], 
     "Event order for listener is correct");
