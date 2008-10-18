@@ -615,6 +615,7 @@ Set or get a piece of metadata on the filehandle. This can be any scalar value.
 sub meta {
     my ($self, $fh, $newval) = @_;
     return if !defined $fh; 
+    return if !exists $self->{fhs}{$fh};
 
     if (@_ > 2) {
         $self->{fhs}{$fh}{meta} = $newval;
