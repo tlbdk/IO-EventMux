@@ -3,6 +3,20 @@ use strict;
 use warnings;
 use Carp qw(carp cluck croak);
 
+# TODO: Look into adding a $mux->connect call like this, so we can do queuing of fhs:
+#   my $mux = new IO::EventMux(MaxFH => 100);
+#   my $id = $mux->connect("tcp://127.0.0.1:22", 10); # Try to connect within 10 sec
+#   while(my $event = $mux->mux) {
+#      if($event->{id} eq $id and $event->{type} eq 'connected') {
+#           print "connected to 127.0.0.1:22 with $event->{fh}\n";
+#      
+#      } elsif($event->{id} eq $id and $event->{type} eq 'error') {
+#           print "did not connect to 127.0.0.1:22 because of error: $event->{fh}";
+#
+#      } elsif($event->{id} eq $id and $event->{type} eq 'timeout') {
+#           print "did not connect to 127.0.0.1:22 because of timeout";
+#      }
+#   }
 
 our $VERSION = '2.00';
 
