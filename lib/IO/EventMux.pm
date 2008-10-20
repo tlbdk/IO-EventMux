@@ -2,21 +2,47 @@ package IO::EventMux;
 use strict;
 use warnings;
 use Carp qw(carp cluck croak);
+# TODO: Look into adding queuing support to IO::EventMux:
 
-# TODO: Look into adding a $mux->connect call like this, so we can do queuing of fhs:
-#   my $mux = new IO::EventMux(MaxFH => 100);
-#   my $id = $mux->connect("tcp://127.0.0.1:22", Timeout => 10); # Try to connect within 10 sec, should work like add
+# TODO: Add Timeout option to $mux->add and $mux->connect
+#
+#   # Try to connect within 10 sec
+#   my $fh = $mux->connect("tcp://127.0.0.1:22", Timeout => 10); 
 #   while(my $event = $mux->mux) {
-#      if($event->{id} eq $id and $event->{type} eq 'connected') {
+#      if($event->{fh} eq $fh and $event->{type} eq 'connected') {
 #           print "connected to 127.0.0.1:22 with $event->{fh}\n";
 #      
-#      } elsif($event->{id} eq $id and $event->{type} eq 'error') {
+#      } elsif($event->{fh} eq $fh and $event->{type} eq 'error') {
 #           print "did not connect to 127.0.0.1:22 because of error: $event->{fh}";
 #
-#      } elsif($event->{id} eq $id and $event->{type} eq 'timeout') {
+#      } elsif($event->{fh} eq $fh and $event->{type} eq 'timeout') {
 #           print "did not connect to 127.0.0.1:22 because of timeout";
 #      }
 #   }
+
+# TODO: Add session identifier option to $mux->add for handling udp protocols 
+#       where session information is hidden in a packet and not the fh.
+#
+#   # Using fh and packet data as identifier 
+#   my $mux->add($fh, Meta => { ... }, MetaHandler => sub {
+#      return $fh.unpack("N", $_[2]); # @_ = ($fh, $sender, $packet_data);
+#   });
+#   
+#   # Using fh and sender as identifier 
+#   my $mux->add($fh, Meta => { ... }, MetaHandler => sub {
+#      return $fh.$_[1]; # @_ = ($fh, $sender, $packet_data);
+#   });
+#  
+#   # Using fh as identifier, default 
+#   my $mux->add($fh, Meta => { ... }, MetaHandler => sub {
+#      return $_[0]; # @_ = ($fh, $sender, $packet_data);
+#   });
+#
+#   while(my $event = $mux->mux) {
+#       my $meta = $mux->meta($event->{id});
+#   }
+#
+
 
 our $VERSION = '2.00';
 
@@ -55,6 +81,8 @@ objects (preferred).
 
 use IO::Select;
 use IO::Socket;
+use IO::Socket::INET;
+use IO::Socket::UNIX;
 use Socket;
 use Errno qw(EPROTO ECONNREFUSED ETIMEDOUT EMSGSIZE ECONNREFUSED EHOSTUNREACH 
              ENETUNREACH EACCES EAGAIN ENOTCONN ECONNRESET EWOULDBLOCK);
@@ -68,6 +96,13 @@ use constant {
     SOL_IP             => 0,
     IP_RECVERR         => 11,
 };
+
+# List of allowed options for add()
+my %allowed_add_opts = map { $_ => 1 } qw(
+    ManualRead ManualWrite ManualAccept
+    ReadSize Buffered Type Errors
+    Meta MetaHandler
+);
 
 =head2 B<new()>
 
@@ -155,7 +190,7 @@ C<Socket::unpack_sockaddr_in()>.
 
 =item read_last
 
-A socket last data before it was closed did not match the buffering rules, as defined by the IO::Buffered type given. The read_last type contains the result of a call to C<read_last()> on the chosen buffer type.
+A socket last data before it was closed did not match the buffering rules, as defined by the IO::Buffered type given. he read_last type contains the result of a call to C<read_last()> on the chosen buffer type.
 
 The default is not to return read_last and if no buffer is set read will contain this information.
 
@@ -538,6 +573,169 @@ sub add {
             my $rv = syswrite($fh, $data);
             croak $! if !defined $rv;
             return $rv;
+        }
+    }
+}
+
+
+=head2 B<listen()>
+
+Wrapper around connect() with option (Listen => SOMAXCONN) set 
+
+=cut
+
+sub listen {
+    my ($self) = shift;
+
+    # Put Listen first in argument list so the user can override it
+    if(@_ % 2) {
+        my ($url, %opts) = @_;
+        $self->connect($url, Listen => SOMAXCONN, %opts);
+    } else {
+        my (%opts) = @_;
+        $self->connect(Listen => SOMAXCONN, %opts);
+    }
+}
+
+=head2 B<connect()>
+
+Connect and add a socket to IO::EventMux, by using either URL syntax or
+IO::Socket Syntax. All options related to IO::EventMux is passed when calling
+add() on the new socket. Connect returns the new socket on completion.
+
+URL Syntax supports this format:
+
+ * (tcp|udp)://HOST:PORT, Returns a udp of tcp socket.
+ * (unix|unix_dgram)://path/file.sock, Returns a unix domain socket connection.
+
+For more information on how to use IO::Socket syntax look in
+L<IO::Socket::INET> and L<IO::Socket::UNIX>.
+
+Example of URL syntax; making a connection to localhost port 22
+
+  my $fh = $mux->connect("tcp://127.0.0.1:22");
+
+Example of the same thing in IO::Socket Syntax;
+  
+  my $fh = $mux->connect(
+    Proto => 'tcp',
+    PeerAddr => '127.0.0.1',
+    PeerPort => 22,
+  );
+
+=cut
+
+sub connect {
+    my ($self) = shift;
+    croak "no arguments given" if @_ == 0;
+    
+    # Check if we called with url_connect or IO::Socket syntax
+    if(@_ % 2) { # url_connect
+        my ($url, %opts) = @_;
+        croak "url not defined" if !defined $url;
+        
+        # FIXME: Use Misc::Regexp
+        if ($url =~ m{^(tcp|udp)://(\d+\.\d+\.\d+\.\d+):(\d+)$}) {
+            my ($proto, $ip, $port) = ($1, $2, $3);
+            
+            my %sopts = (
+                Proto => $proto,
+                Type => ($proto eq 'tcp' ? SOCK_STREAM : SOCK_DGRAM),
+                Blocking => 0,
+                ($opts{Listen} ?(Listen => $opts{Listen}):()),
+            );
+
+            my $fh;
+            if($opts{Listen}) {
+                # Only TCP supports the Listen option
+                delete $sopts{Listen} if $proto eq 'udp';
+                delete $opts{Listen} if $proto eq 'udp';
+                
+                $fh = IO::Socket::INET->new(
+                    ($ip?(LocalAddr => $ip):()),
+                    ($port?(LocalPort => $port):()),
+                    ReuseAddr => 1,
+                    %sopts,
+                ) or croak "Listening to $url: $!";
+            
+            } else {
+                $fh = IO::Socket::INET->new(
+                    ($ip?(PeerAddr => $ip):()),
+                    ($port?(PeerPort => $port):()),
+                    %sopts,
+                ) or croak "Connection to $url: $!";
+            }
+
+            $self->add($fh, %opts);
+            return $fh;
+    
+        } elsif($url =~ m{^unix(?:_(dgram))?://(.+)$}) {
+            my ($dgram, $file) = ($1, $2);
+            
+            my %sopts = (
+                ($dgram?(Type => SOCK_DGRAM):()),
+                Blocking => 0,
+            );
+                
+            my $fh;
+            if($opts{Listen}) {
+                $fh = IO::Socket::UNIX->new(
+                    Peer => $file,
+                    %sopts,
+                ) or croak "Listening to $url: $!";
+            
+            } else {
+                $fh = IO::Socket::UNIX->new(
+                    Local => $file,
+                    %sopts,
+                ) or croak "Connecting to $url: $!";
+            }
+
+            delete $opts{Listen};
+            $self->add($fh, %opts);
+            return $fh;
+    
+        } else {
+            croak "unknown url type: $url";
+        }
+   
+    } else { # IO::Socket
+        my (%opts) = @_;
+        
+        # Get list of options that are for IO::Socket
+        my (%sopts) = map { $_ => $opts{$_} } 
+                      grep { !exists $allowed_add_opts{$_} } keys %opts;
+        
+        # Remove Socket options from add options, but keep Listen
+        %opts = map { $_ => $opts{$_} } 
+                grep { !exists $sopts{$_} or $_ eq 'Listen'} keys %opts;
+
+        # Check if this is a tcp or udp socket
+        if(defined $sopts{Proto}) {
+            # Only TCP supports the Listen option
+            delete $sopts{Listen} if $sopts{Proto} eq 'udp';
+            delete $opts{Listen} if $sopts{Proto} eq 'udp';
+           
+            my $fh = IO::Socket::INET->new(
+                Blocking => 0,
+                %sopts,
+            ) or croak "Could not create IO::Socket::INET: $!";
+            
+            $self->add($fh, %opts);
+            return $fh;
+
+        # Check if this is a UNIX domain socket
+        } elsif(defined $sopts{Local} or defined $sopts{Peer}) {
+            my $fh = IO::Socket::UNIX->new(
+                Blocking  => 0,
+                %sopts,
+            ) or croak "Could not create IO::Socket::UNIX: $!";
+            
+            $self->add($fh, %opts);
+            return $fh;
+        
+        } else {
+            croak "unknown socket options set or no Proto defined";
         }
     }
 }

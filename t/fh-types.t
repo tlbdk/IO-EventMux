@@ -33,7 +33,7 @@ my $udpnc = IO::Socket::INET->new(
     Blocking     => 0,
 ) or die "Could not open non connected udp socket: $!\n";
 $mux->add($udpnc);
-is($mux->type($udpnc), 'dgram', "UDP(non connected): Type was detected as stream");
+is($mux->type($udpnc), 'dgram', "UDP(non connected): Type was detected as dgram");
 
 my $tcpl = IO::Socket::INET->new(
     LocalPort    => 11045,
