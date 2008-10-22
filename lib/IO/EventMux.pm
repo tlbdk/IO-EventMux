@@ -820,7 +820,7 @@ Set or get a piece of metadata on the filehandle. This can be any scalar value.
 
 sub meta {
     my ($self, $id, $newval) = @_;
-    croak "id not defined" if !defined $id; 
+    return if !defined $id; 
 
     if (@_ > 2) {
         $self->{sessions}{$id} = $newval;
