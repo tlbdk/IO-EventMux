@@ -22,20 +22,20 @@ use Carp qw(carp cluck croak);
 
 # TODO: Add session identifier option to $mux->add for handling udp protocols 
 #       where session information is hidden in a packet and not the fh.
-#
-#   # Using fh and packet data as identifier 
-#   my $mux->add($fh, Meta => { ... }, MetaHandler => sub {
-#      return $fh.unpack("N", $_[2]); # @_ = ($fh, $sender, $packet_data);
-#   });
 #   
 #   # Using fh and sender as identifier 
 #   my $mux->add($fh, Meta => { ... }, MetaHandler => sub {
-#      return $fh.$_[1]; # @_ = ($fh, $sender, $packet_data);
+#      return $fh.$_[2]; # @_ = ($fh, $packet_data, $sender);
+#   });
+#
+#   # Using fh and packet data as identifier 
+#   my $mux->add($fh, Meta => { ... }, MetaHandler => sub {
+#      return $fh.unpack("N", $_[1]); # @_ = ($fh, $packet_data, $sender);
 #   });
 #  
 #   # Using fh as identifier, default 
 #   my $mux->add($fh, Meta => { ... }, MetaHandler => sub {
-#      return $_[0]; # @_ = ($fh, $sender, $packet_data);
+#      return $_[0]; # @_ = ($fh, $packet_data, $sender);
 #   });
 #
 #   while(my $event = $mux->mux) {
@@ -125,6 +125,7 @@ sub new {
         readfh        => IO::Select->new(),
         writefh       => IO::Select->new(),
         fhs           => { },
+        sessions      => { },
         listenfh      => { },
         
         events        => [ ],
@@ -467,6 +468,8 @@ sub add {
     croak "Buffered is not a IO::Buffered object" if defined $opts{Buffered} 
         and !(blessed($opts{Buffered}) 
         and $opts{Buffered}->isa('IO::Buffered'));
+    croak "MetaHandler is not a code ref" if defined $opts{MetaHandler} 
+        and !(ref $opts{MetaHandler} eq 'CODE');
 
     # Init for new fh
     $self->{fhs}{$fh} = {
@@ -483,9 +486,14 @@ sub add {
         # Save %opts, so we can given it to $fh->accept() children.
         opts => \%opts,
         inbuffer => (defined $opts{Buffered} ? $opts{Buffered} : undef),
-        meta => (exists $opts{Meta} ? $opts{Meta} : undef),
+        meta_handler => (exists $opts{MetaHandler} ? $opts{MetaHandler} : undef),
         mode => 'normal',
     };
+  
+    # Set the initial session/Meta information
+    if(exists $opts{Meta}) {
+        $self->{sessions}{$fh} = $opts{Meta};
+    }
 
     my $cfg = $self->{fhs}{$fh}; 
 
@@ -811,14 +819,14 @@ Set or get a piece of metadata on the filehandle. This can be any scalar value.
 =cut
 
 sub meta {
-    my ($self, $fh, $newval) = @_;
-    return if !defined $fh; 
-    return if !exists $self->{fhs}{$fh};
+    my ($self, $id, $newval) = @_;
+    croak "id not defined" if !defined $id; 
 
     if (@_ > 2) {
-        $self->{fhs}{$fh}{meta} = $newval;
+        $self->{sessions}{$id} = $newval;
     }
-    return $self->{fhs}{$fh}{meta};
+
+    return $self->{sessions}{$id};
 }
 
 =head2 B<remove($fh)>
@@ -930,6 +938,7 @@ off (default).
 
 =cut
 
+# FIXME: Cleanup, remove print
 sub recvdata {
     my ($self, $fh, $length) = @_;
     my $cfg = $self->{fhs}{$fh}; 
@@ -1054,7 +1063,8 @@ sub _send_dgram {
             $self->push_event(@events);
             next;
         
-        } elsif($@) { 
+        } elsif($@) {
+            # FIXME: Add MetaHandler id to error information
             $self->push_event({ type => 'error', error => "$@", fh => $fh, 
                     receiver => $to });   
             return;
@@ -1283,6 +1293,7 @@ sub _read_events {
         return;
     
     } elsif($@ and $cfg->{errors} and my @events = socket_errors($fh)) {
+        # FIXME: Adde MetaHandler information to events
         $self->push_event(@events);
         return 1;
     
@@ -1334,8 +1345,16 @@ sub _read_events {
         return 1;
 
     } else {
+        # Add MetaHandler information
+        my $id;
+        if(defined $cfg->{meta_handler}) {
+            $id = $cfg->{meta_handler}->($fh, $data, $sender);
+        }
+
         $self->push_event({ type => 'read', fh => $fh, data => $data, 
-            ($sender ? (sender => $sender) : ()) });
+            ($sender ? (sender => $sender) : ()),
+            ($id ? (id => $id) : ()),
+        });
         return 1;
     }
 }
