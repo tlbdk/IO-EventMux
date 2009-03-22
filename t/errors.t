@@ -8,6 +8,13 @@ use Socket;
 use IO::Socket::INET;
 use Data::Dumper;
 
+eval "use IO::EventMux::Socket::MsgHdr qw(socket_errors);"; ## no critic
+if($@) {
+    pass "You need to install IO::EventMux::Socket::MsgHdr to run this test";
+    pass "";
+    exit;
+}
+
 my $sock = IO::Socket::INET->new(
     Type     => SOCK_DGRAM,
     Proto    => "udp",

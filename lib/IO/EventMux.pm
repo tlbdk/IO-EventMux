@@ -91,7 +91,15 @@ use POSIX qw(strerror);
 
 use Scalar::Util qw(blessed);
 
-use IO::EventMux::Socket::MsgHdr qw(socket_errors);
+# Make nice fallback for socket_errors usage
+eval "use IO::EventMux::Socket::MsgHdr qw(socket_errors);"; ## no critic
+if($@) {
+    *IO::EventMux::socket_errors = sub {
+        die "You need to install IO::EventMux::Socket::MsgHdr"
+            ." to use the Errors options";
+    };
+}
+
 use constant {
     SOL_IP             => 0,
     IP_RECVERR         => 11,
@@ -1369,6 +1377,12 @@ sub _read_events {
         return 1;
     }
 }
+
+=head2 socket_errors
+
+Dummy sub that casts an error if the IO::EventMux::Socket::MsgHdr is not installed and the Errors option is used
+
+=cut
 
 =head2 NOTES
 
