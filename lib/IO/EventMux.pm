@@ -790,6 +790,17 @@ sub handles {
     return $self->{readfh}->handles;
 }
 
+=head2 B<has_events()>
+
+Returns true if there are pending events, or false otherwise
+
+=cut
+
+sub has_events {
+    my ($self) = @_;
+    return @{$self->{events}} + @{$self->{actionq}};
+}
+
 =head2 B<type()>
 
 Returns the socket type for a file handle
@@ -933,7 +944,7 @@ sub buflen {
 
 =head2 B<recvdata($fh, $length)>
 
-Queues @data to be written to the file handle $fh. Can only be used when ManualWrite is
+TODO: Queues @data to be written to the file handle $fh. Can only be used when ManualWrite is
 off (default).
 
 =cut

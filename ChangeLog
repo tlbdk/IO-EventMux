@@ -1,4 +1,7 @@
-Version 2.00 ()
+Version 2.00 (Sun Mar 22 2009)
+ * Added IO::EventMux::Dump from José Micó
+ * Added new function has_events as suggested by José Micó
+ * Added new connect() call as shorthand for creating socket/adding it
  * Use Errno instead of POSIX as this takes less mem and is faster to load.
  * Added support for auto detecting if a socket is in listening mode or not.
    Listen => 1 on add() is no longer needed.
@@ -11,7 +14,6 @@ Version 2.00 ()
    in a lot of cases.
  * Add credential information to unix sockets on accepted event.
  * Mux now croaks on negativ timeout value
-
 
 Version 1.02 (Sun Dec 30 2007)
  * Make push_event public, so fake events can be pushed to the queue.
