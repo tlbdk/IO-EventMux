@@ -1,4 +1,5 @@
 Version 2.01 (Sun Apr 15 2009)
+ * Added pluggable EventLoop mechanism and added support for IO::Epool 
  * Fixed tests so there is no more hard dependence on IO::Buffered
  * Small fix for IO::EventMux::Dump eating options.
 
