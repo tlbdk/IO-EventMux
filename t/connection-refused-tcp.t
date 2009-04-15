@@ -21,7 +21,7 @@ while(1) {
     my $event = $mux->mux(2);
     use Data::Dumper; print Dumper($event);
     if($event->{type} eq 'error') {
-        is($event->{error}, 'Connection refused', "We got a connection refused");
+        ok($event->{error} =~ 'Connection refused', "We got a connection refused");
         exit;
     } elsif($event->{type} eq 'timeout') {
         fail "Got timeout??";

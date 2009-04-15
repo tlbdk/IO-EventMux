@@ -37,9 +37,12 @@ SKIP: {
     my $goodfh = string_fh($data);
     $mux->add($goodfh, Buffered => new IO::Buffered(HTTP => 1));
 
+    print "goodfh: $goodfh\n";
+
     my %types;
     while ($mux->handles > 0) {
         my $event = $mux->mux();
+        print "type: $event->{type}\n";
         $types{$event->{fh}}{types} .= $event->{type};
 
         if($event->{type} eq 'read') {
