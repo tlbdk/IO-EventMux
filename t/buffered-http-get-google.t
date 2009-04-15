@@ -17,7 +17,6 @@ $hasIOBuffered = 0;
 
 SKIP: {
     skip "IO::Buffered not installed or skiped because test hangs", 1 unless $hasIOBuffered;
-    use IO::Buffered::HTTP;
     my $mux = IO::EventMux->new;
 
     http_get("www.google.com", 80, "/");

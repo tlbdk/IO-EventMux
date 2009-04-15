@@ -4,7 +4,6 @@ use warnings;
 use Test::More tests => 1;
 
 use IO::EventMux;
-use IO::Buffered::HTTP;
 use Data::Dumper;
 
 my $PORT = 7007;
@@ -12,7 +11,7 @@ my $PORT = 7007;
 
 my $hasIOBuffered = 1;
 
-eval 'require IO::Buffered';
+eval 'require IO::Buffered::HTTP';
 if ($@) {
     $hasIOBuffered = 0;
 }

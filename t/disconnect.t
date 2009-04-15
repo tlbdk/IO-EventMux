@@ -30,9 +30,7 @@ if ($@) {
 }
 
 SKIP: {
-    skip "IO::Buffered not installed", 2 unless $hasIOBuffered;
-
-    use IO::Buffered;
+    skip "IO::Buffered not installed", 4 unless $hasIOBuffered;
 
     my $PORT = 7007;
 

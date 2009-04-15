@@ -15,8 +15,6 @@ if ($@) {
 SKIP: {
     skip "IO::Buffered not installed", 2 unless $hasIOBuffered;
 
-    use IO::Buffered;
-
     # FIXME: Add something where buffering would matter, ie try changing to none
 
     my $mux = IO::EventMux->new();

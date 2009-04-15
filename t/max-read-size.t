@@ -15,8 +15,6 @@ if ($@) {
 SKIP: {
     skip "IO::Buffered not installed", 2 unless $hasIOBuffered;
 
-    use IO::Buffered::Split;
-
     my $mux = IO::EventMux->new();
 
     sub string_fh {

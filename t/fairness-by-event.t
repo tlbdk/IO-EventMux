@@ -16,8 +16,6 @@ if ($@) {
 SKIP: {
     skip "IO::Buffered not installed", 9 unless $hasIOBuffered;
 
-    use IO::Buffered;
-
     my $mux = IO::EventMux->new(ReadPriorityType => ['FairByEvent']);
 
     sub create_writer {

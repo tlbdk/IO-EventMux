@@ -15,9 +15,7 @@ if ($@) {
 
 
 SKIP: {
-    skip "IO::Buffered not installed", 2 unless $hasIOBuffered;
-
-    use IO::Buffered;
+    skip "IO::Buffered not installed", 7 unless $hasIOBuffered;
 
     my $mux = IO::EventMux->new();
 
