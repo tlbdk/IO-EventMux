@@ -1621,7 +1621,7 @@ When the other end of a pipe closes it's end, signals can get thrown. To handle
 this a signal handler needs to be defined:
 
   # Needed when writing to a broken pipe 
-  $SIG{PIPE} = sub {
+  $SIG{PIPE} = sub { # SIGPIPE
      croak "Broken pipe";
  };
 
