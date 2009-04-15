@@ -1,3 +1,7 @@
+Version 2.01 (Sun Apr 15 2009)
+ * Fixed tests so there is no more hard dependence on IO::Buffered
+ * Small fix for IO::EventMux::Dump eating options.
+
 Version 2.00 (Sun Mar 22 2009)
  * Added IO::EventMux::Dump from José Micó
  * Added new function has_events as suggested by José Micó

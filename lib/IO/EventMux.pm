@@ -44,7 +44,7 @@ use Carp qw(carp cluck croak);
 #
 
 
-our $VERSION = '2.00';
+our $VERSION = '2.01';
 
 =head1 NAME
 
@@ -120,8 +120,28 @@ Constructs an IO::EventMux object.
 
 sub new {
     my ($class, %opts) = @_;
-    
-    bless {
+
+    my %eventloopvars;
+    if(my $eventloop = $opts{EventLoop}) {
+        *_eventloop_wait = \$eventloop->{Wait};
+        *_eventloop_add = \$eventloop->{Add};
+        *_eventloop_remove = \$eventloop->{Remove};
+        *handles = \$eventloop->{Handles};
+        %eventloopvars = %{$eventloop->{Vars}};
+    } else {
+        *_eventloop_wait = *_eventloop_wait_select;
+        *_eventloop_add = *_eventloop_add_select;
+        *_eventloop_remove = *_eventloop_remove_select;
+        *handles = *_eventloop_handles_select;
+        %eventloopvars = (    
+            readfh        => IO::Select->new(),
+            writefh       => IO::Select->new(),
+        ); 
+    }
+
+    return bless {
+        %eventloopvars,
+
         # GLOBAL
         auto_accept   => 1,
         auto_write    => 1,
@@ -130,8 +150,6 @@ sub new {
         errors        => 0,
         read_size     => 65536,
         
-        readfh        => IO::Select->new(),
-        writefh       => IO::Select->new(),
         fhs           => { },
         sessions      => { },
         listenfh      => { },
@@ -143,6 +161,7 @@ sub new {
         return_last   => 0,
         type          => 'stream',
         class         => 'socket',
+
     }, $class;
 }
 
@@ -260,7 +279,7 @@ sub mux {
 sub _get_event {
     my ($self, $timeout) = @_;
     
-    my $select = $self->_io_select($timeout);
+    my $select = _eventloop_wait($self, $timeout);
     if(!$select) {
         $self->push_event({ type => 'timeout' });
         return;
@@ -338,7 +357,22 @@ sub _get_event {
     }
 }
 
-sub _io_select {
+sub _eventloop_handles_select {
+    my ($self) = @_;
+    return $self->{readfh}->handles;
+}
+
+sub _eventloop_add_select {
+    my ($self, $list, $fh) = @_;
+    $self->{$list}->add($fh);
+}
+
+sub _eventloop_remove_select {
+    my ($self, $list, $fh) = @_;
+    $self->{$list}->remove($fh);
+}
+
+sub _eventloop_wait_select {
     my ($self, $timeout) = @_;
 
     $! = 0;
@@ -550,9 +584,9 @@ sub add {
     }
 
     if (!exists $self->{listenfh}{$fh}) {
-        $self->{writefh}->add($fh);
+        _eventloop_add($self, "writefh",$fh);
     }
-    $self->{readfh}->add($fh);
+    _eventloop_add($self, "readfh", $fh);
 
     # Find out if this object has it's own recv() function else use sysread()
     if (blessed($fh) && $fh->can('recv')) {
@@ -793,10 +827,7 @@ Returns a list of file handles managed by this object.
 
 =cut
 
-sub handles {
-    my ($self) = @_;
-    return $self->{readfh}->handles;
-}
+sub handles {  } # Stub - is created in new()
 
 =head2 B<has_events()>
 
@@ -858,8 +889,8 @@ responsibility of closing it.
 sub remove {
     my ($self, $fh) = @_;
 
-    $self->{readfh}->remove($fh);
-    $self->{writefh}->remove($fh);
+    _eventloop_remove($self, "readfh", $fh);
+    _eventloop_remove($self, "writefh", $fh);
     delete $self->{listenfh}{$fh};
     delete $self->{fhs}{$fh};
 }
@@ -883,8 +914,8 @@ sub close {
     $self->{fhs}{$fh}{disconnecting} = 1;
     
     delete $self->{listenfh}{$fh};
-    $self->{writefh}->remove($fh);
-    $self->{readfh}->remove($fh);
+    _eventloop_remove($self, "readfh", $fh);
+    _eventloop_remove($self, "writefh", $fh);
     
     $self->push_event({ type => 'closing', fh => $fh });
     
@@ -906,8 +937,8 @@ Note: Does not return the 'read_last' event.
 sub kill {
     my ($self, $fh) = @_;
 
-    $self->{readfh}->remove($fh);
-    $self->{writefh}->remove($fh);
+    _eventloop_remove($self, "readfh", $fh);
+    _eventloop_remove($self, "writefh", $fh);
 
     $self->push_event({ type => 'closed', fh => $fh, 
             missing => $self->buflen($fh) });
@@ -1033,7 +1064,7 @@ sub sendto {
         my $rv = $self->_send_dgram($fh);
         
         if(@{$cfg->{outbuffer}}) {
-            $self->{writefh}->add($fh);
+            _eventloop_add($self, "writefh", $fh);
         }
 
         return $rv;
@@ -1043,7 +1074,7 @@ sub sendto {
         my $rv = $self->_send_stream($fh);
     
         if(length $cfg->{outbuffer}) {
-            $self->{writefh}->add($fh);
+            _eventloop_add($self, "writefh", $fh);
         }
 
         return $rv;
@@ -1058,7 +1089,7 @@ sub _send_dgram {
 
     if (@{$cfg->{outbuffer}} == 0) {
         # no data to send
-        $self->{writefh}->remove($fh);
+        _eventloop_remove($self, "writefh", $fh);
         return;
     }
 
@@ -1099,7 +1130,7 @@ sub _send_dgram {
    
     # Buffer is empty and stop listening to write
     $self->push_event({type => 'sent', fh => $fh});
-    $self->{writefh}->remove($fh);
+    _eventloop_remove($self, "writefh", $fh);
 
     return $packets_sent;
 }
@@ -1111,7 +1142,7 @@ sub _send_stream {
 
     if ($cfg->{outbuffer} eq '') {
         # no data to send
-        $self->{writefh}->remove($fh);
+        _eventloop_remove($self, "writefh", $fh);
         return;
     }
 
@@ -1141,12 +1172,12 @@ sub _send_stream {
     } elsif ($rv < length $cfg->{outbuffer}) {
         # only part of the data was sent
         substr($cfg->{outbuffer}, 0, $rv) = '';
-        $self->{writefh}->add($fh);
+        _eventloop_add($self, "writefh", $fh);
         
     } else {
         # all pending data was sent
         $cfg->{outbuffer} = '';
-        $self->{writefh}->remove($fh);
+        _eventloop_remove($self, "writefh", $fh);
 
         if($cfg->{ready} == 0) {
             $cfg->{ready} = 1;
