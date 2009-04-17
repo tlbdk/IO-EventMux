@@ -44,7 +44,7 @@ use Carp qw(carp cluck croak);
 #
 
 
-our $VERSION = '2.01';
+our $VERSION = '2.02';
 
 =head1 NAME
 
@@ -173,7 +173,7 @@ implements the following structure:
 sub new {
     my ($class, %opts) = @_;
 
-    $opts{EventLoop} = ['IO::Epoll', 1024];
+    #$opts{EventLoop} = ['IO::Epoll', 1024];
 
     my %eventloopvars;
     if(my $eventloop = $opts{EventLoop}) {
