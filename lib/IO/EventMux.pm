@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use Carp qw(carp cluck croak);
 # TODO: Look into adding queuing support to IO::EventMux:
-
+# TODO: Check send() for empty string('').
 # TODO: Add Timeout option to $mux->add and $mux->connect
 #
 #   # Try to connect within 10 sec
