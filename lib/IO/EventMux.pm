@@ -1130,8 +1130,9 @@ Note: Does not return the 'read_last' event.
 sub kill {
     my ($self, $fh) = @_;
     croak "fh is undefined" if !defined $fh;
-    print "kill: $fh\n";
+    
     return if !exists $self->{fhs}{$fh}; # Only remove if we handle this fh
+    
     _eventloop_remove($self, "readfh", $fh);
     _eventloop_remove($self, "writefh", $fh);
 
