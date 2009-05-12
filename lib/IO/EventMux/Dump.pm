@@ -54,7 +54,9 @@ Wrapper for mux call that will write filehandle fileno and data from "read" even
 sub mux {
     my $self = shift;
     my $event = $self->SUPER::mux(@_);
-    
+
+    return if !defined $event;
+
     my $fh_id = ($event->{fh} && $event->{fh}->fileno) ? $event->{fh}->fileno : '-';
 
     if ($event->{type} eq 'read') {

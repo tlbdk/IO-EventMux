@@ -1,3 +1,8 @@
+Version 2.02 ()
+ * mux() will now return undef when the event queue is empty and there are no 
+   handles to watch, this was done to make it easier to drop out of the loop 
+   when there are no chance that any events will be generated.
+
 Version 2.01 (Sun Apr 15 2009)
  * Remove IO::Epoll as default mistake
 

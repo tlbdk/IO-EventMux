@@ -258,9 +258,13 @@ This method will block until ether an event occurs on one of the file handles
 or the $timeout (floating point seconds) expires.  If the $timeout argument is
 not present, it waits forever.  If $timeout is 0, it returns immediately.
 
-The return value is always a hash, which always has the key 'type', indicating
-what kind it is.  It will also usually carry the 'fh' key, indicating what file
-handle the event happened on.
+The return value is always a hash if eventmux has any file handles to watch or
+there are events waiting in the queue. All event's always has the key 'type',
+indicating what kind it is. It will also usually carry the 'fh' key,
+indicating what file handle the event happened on.
+
+NOTE: If mux() is called with an empty event queue and not file handles to
+watch it will return undef.
 
 The 'type' key can have the following values:
 
@@ -278,8 +282,9 @@ An error occurred in connection with the file handle, such as
 =item accepted
 
 A new client connected to a listening socket and the connection was accepted by
-EventMux. The listening socket file handle is in the 'parent_fh' key. If the 
-file handle is a unix domain socket the credentials of the user connection will be available in the keys; 'pid', 'uid' and 'gid'. 
+EventMux. The listening socket file handle is in the 'parent_fh' key. If the
+file handle is a unix domain socket the credentials of the user connection will
+be available in the keys; 'pid', 'uid' and 'gid'. 
 
 =item ready 
 
@@ -290,24 +295,26 @@ connection.
 =item accepting
 
 A new client is trying to connect to a listening socket, but the user code must
-call accept manually.  This only happens when the ManualAccept option is
-set.
+call accept manually.  This only happens when the ManualAccept option is set.
 
 =item read
 
-A socket has incoming data.  If the socket's Buffered option is set, this
-will be what the buffering rule define.
+A socket has incoming data.  If the socket's Buffered option is set, this will
+be what the buffering rule define.
 
-The data is contained in the 'data' key of the event hash.  If recv() 
-returned a sender address, it is contained in the 'sender' key and must be 
-manually unpacked according to the socket domain, e.g. with 
+The data is contained in the 'data' key of the event hash.  If recv() returned
+a sender address, it is contained in the 'sender' key and must be manually
+unpacked according to the socket domain, e.g. with
 C<Socket::unpack_sockaddr_in()>.
 
 =item read_last
 
-A socket last data before it was closed did not match the buffering rules, as defined by the IO::Buffered type given. he read_last type contains the result of a call to C<read_last()> on the chosen buffer type.
+A socket last data before it was closed did not match the buffering rules, as
+defined by the IO::Buffered type given. he read_last type contains the result
+of a call to C<read_last()> on the chosen buffer type.
 
-The default is not to return read_last and if no buffer is set read will contain this information.
+The default is not to return read_last and if no buffer is set read will
+contain this information.
 
 =item sent
 
@@ -317,11 +324,11 @@ the data has reached the local buffer of the kernel.
 
 =item closing
 
-A file handle was detected to be have been closed by the other end or the file 
-handle was set to be closed by the user. So EventMux stooped listening for 
+A file handle was detected to be have been closed by the other end or the file
+handle was set to be closed by the user. So EventMux stooped listening for
 events on this file handle. Event data like 'Meta' is still accessible.
 
-The 'missing' key indicates the amount of data or packets left in the user 
+The 'missing' key indicates the amount of data or packets left in the user
 space buffer when the file handle was closed. This does not indicate the amount
 of data received by the other end, only that the user space buffer left. 
 
@@ -350,6 +357,9 @@ sub mux {
 
     croak "timeout can not be negativ: $timeout"
         if defined $timeout and $timeout < 0;
+    
+    # Special case with empty event queue and not fh to watch
+    return if @{$self->{events}} == 0 and $self->handles() == 0; 
 
     until ($event = shift @{$self->{events}}) {
         # actions to execute?
