@@ -27,7 +27,6 @@ use Carp qw(carp cluck croak);
 #      } 
 #   );
 #
-# TODO: Check that we always return a ready as the first event for a filehandle???
 # TODO: Look into adding queuing support to IO::EventMux:
 # TODO: Check send() for empty string('').
 # TODO: Add Timeout option to $mux->add and $mux->connect
@@ -314,9 +313,11 @@ be available in the keys; 'pid', 'uid' and 'gid'.
 
 =item ready 
 
-A file handle is ready to be written to, this can be use full when working with
-nonblocking connects so you know when the remote connection accepted the
-connection.
+A file handle is ready to be written to, this can be usefull when working with
+nonblocking connects so you know when the remote host accepted the connection.
+
+NOTE: Read only file handles such as the read end of a pipe does not return a
+ready event.
 
 =item accepting
 
@@ -413,7 +414,7 @@ sub _get_event {
     # buffers to flush?, can_write is set.
     for my $fh (@{$select->{can_write}}) {
         my $cfg = $self->{fhs}{$fh};
-
+        
         if(exists $cfg->{ready} and $cfg->{ready} == 0) {
             $cfg->{ready} = 1;
 
