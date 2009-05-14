@@ -2,6 +2,32 @@ package IO::EventMux;
 use strict;
 use warnings;
 use Carp qw(carp cluck croak);
+# TODO: Stackable buffers
+#   Buffered sub should return the amount of input buffer consumed
+#
+#   my $mux->add($fh, Buffered => [ # Exceptions are turned into 'error' events
+#      sub { # Read size first packet
+#          my ($input, $output, $meta, $sender) = @_;
+#          return if length($$buf) < 4;
+#
+#          my $length = unpack("N", substr($$input, 0, 4));
+#          die "Packet length to small" if $length < 4;
+#          if($length < length($input)) {
+#              $$output .= substr($$buf, 4, $length);
+#              return $length + 4;
+#           } else {
+#               return;
+#           }
+#      },
+#      sub {
+#          my ($input, $output, $meta, $sender) = @_;
+#          $$output = decompress($$input);
+#          $meta->{id} = $sender.unpack("N", substr($$output, 0, 4)); # Make uniq id for this event
+#          return length($input);
+#      } 
+#   );
+#
+# TODO: Check that we always return a ready as the first event for a filehandle???
 # TODO: Look into adding queuing support to IO::EventMux:
 # TODO: Check send() for empty string('').
 # TODO: Add Timeout option to $mux->add and $mux->connect
