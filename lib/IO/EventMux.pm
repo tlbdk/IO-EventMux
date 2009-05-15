@@ -288,8 +288,8 @@ there are events waiting in the queue. All event's always has the key 'type',
 indicating what kind it is. It will also usually carry the 'fh' key,
 indicating what file handle the event happened on.
 
-NOTE: If mux() is called with an empty event queue and not file handles to
-watch it will return undef.
+NOTE: If mux() is called with an empty event queue, no file handles to
+watch and without a timeout it will return undef.
 
 The 'type' key can have the following values:
 
@@ -385,8 +385,9 @@ sub mux {
     croak "timeout can not be negativ: $timeout"
         if defined $timeout and $timeout < 0;
     
-    # Special case with empty event queue and not fh to watch
-    return if @{$self->{events}} == 0 and $self->handles() == 0; 
+    # Special case with empty event queue and no fh's to watch
+    return if @{$self->{events}} == 0 and $self->handles() == 0 
+        and !defined $timeout; 
 
     until ($event = shift @{$self->{events}}) {
         # actions to execute?
