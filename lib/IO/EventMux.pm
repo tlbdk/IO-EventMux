@@ -114,6 +114,7 @@ use Errno qw(EPROTO ECONNREFUSED ETIMEDOUT EMSGSIZE ECONNREFUSED EHOSTUNREACH
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
 use POSIX qw(strerror);
 
+use List::Util qw(reduce);
 use Scalar::Util qw(blessed);
 
 # Define EPOLL constants as this needs to be done at compile time
@@ -277,11 +278,13 @@ sub new {
     }, $class;
 }
 
-=head2 B<mux([$timeout])>
+=head2 B<mux([$timeout, $timeout, ...])>
 
 This method will block until ether an event occurs on one of the file handles
 or the $timeout (floating point seconds) expires.  If the $timeout argument is
-not present, it waits forever.  If $timeout is 0, it returns immediately.
+not present or undef, it waits forever.  If $timeout is 0, it returns
+immediately. If a list of timeouts is given the lowest one is taken, the lowest
+possible value being 0 and the highest one undef for waiting forever.
 
 The return value is always a hash if eventmux has any file handles to watch or
 there are events waiting in the queue. All event's always has the key 'type',
@@ -379,9 +382,12 @@ indicated that the handle can be read from.
 =cut
 
 sub mux {
-    my ($self,$timeout) = @_;
+    my ($self, @timeout) = @_;
     my $event;
 
+    # Find the next timeout(lowest)
+    my $timeout = reduce { $a < $b ? $a : $b } grep { defined $_ } @timeout;
+    
     croak "timeout can not be negativ: $timeout"
         if defined $timeout and $timeout < 0;
     
