@@ -1464,6 +1464,29 @@ sub nonblock {
     }
 }
 
+=head2 B<socket_buffer($fh, $buffersize)>
+
+Increase the receive buffer of a UDP socket. This is might be necessary because
+many simultaneous requests can cause many reply packets to hit the socket at
+almost the same time.
+
+NOTE: Also make sure your /proc/sys/net/core/rmem_max is big enough.
+
+=cut
+
+sub socket_buffer {
+    my ($self, $sock, $bufsize) = @_;
+
+    $sock->sockopt(SO_RCVBUF, $bufsize);
+
+    my $newsize = $sock->sockopt(SO_RCVBUF);
+    if ($newsize < $bufsize*2) { # Linux multiplies the buffer by 2
+        die "Could not increase receive buffer size to $bufsize * 2.\n".
+            "Run as root: sysctl -w net.core.rmem_max=10485760\n";
+    }
+}
+
+
 =head2 B<socket_creds($fh)>
 
 Return credentials on UNIX domain sockets.
