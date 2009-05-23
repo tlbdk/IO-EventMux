@@ -1290,7 +1290,7 @@ sub sendto {
 
     my $cfg = $self->{fhs}{$fh};
 
-    croak "send() on filehandle not handled by IO::Eventmux" if !$cfg;
+    croak "send() on filehandle $fh not handled by IO::Eventmux" if !$cfg;
 
     return if $cfg->{disconnecting};
 
