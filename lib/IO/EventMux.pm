@@ -1474,6 +1474,7 @@ NOTE: Also make sure your /proc/sys/net/core/rmem_max is big enough.
 
 =cut
 
+# TODO: add SO_SNDBUF aswell.
 sub socket_buffer {
     my ($self, $sock, $bufsize) = @_;
 
@@ -1481,8 +1482,9 @@ sub socket_buffer {
 
     my $newsize = $sock->sockopt(SO_RCVBUF);
     if ($newsize < $bufsize*2) { # Linux multiplies the buffer by 2
-        die "Could not increase receive buffer size to $bufsize * 2.\n".
-            "Run as root: sysctl -w net.core.rmem_max=10485760\n";
+        system("/sbin/sysctl -w net.core.rmem_max=10485760") == 0
+            or die "Could not set receive buffer size to $bufsize * 2.\n"
+                ."Run as root: sysctl -w net.core.rmem_max=10485760\n";
     }
 }
 
