@@ -1416,7 +1416,7 @@ sub _send_stream {
 
     } elsif ($rv < length $cfg->{outbuffer}) {
         # only part of the data was sent
-        substr($cfg->{outbuffer}, 0, $rv) = '';
+        substr($cfg->{outbuffer}, 0, $rv, '');
         _eventloop_add($self, "writefh", $fh);
         
     } else {
