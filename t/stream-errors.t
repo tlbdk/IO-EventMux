@@ -19,7 +19,7 @@ close $reader;
 my $mux = new IO::EventMux();
 
 eval { $mux->send($writer, "Hello2"); };
-ok($@ =~ /send\(\) on filehandle not handled by IO::Eventmux/,
+like($@,  qr/send\(\) on filehandle .* not handled by IO::Eventmux/,
     "Fail on sending to filehandle before we add it");
 
 $mux->nonblock($writer);
