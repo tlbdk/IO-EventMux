@@ -213,7 +213,7 @@ sub new {
        
         } elsif(ref $eventloop eq 'ARRAY') {
             my ($type, @args) = @{$eventloop};
-
+            # TODO: Warn that this handle patching can only be done once pr. perl instance
             if($type eq 'IO::Epoll') {
                 require IO::Epoll;
                 *epoll_create = *IO::Epoll::epoll_create;
