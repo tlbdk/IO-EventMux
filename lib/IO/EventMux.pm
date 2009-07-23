@@ -4,11 +4,14 @@ use warnings;
 use Carp qw(carp cluck croak);
 # TODO: Stackable buffers
 #   Buffered sub should return the amount of input buffer consumed
+#   
+#   Meta (Options) -> auth data, sender data
 #
 #   my $mux->add($fh, Buffered => [ # Exceptions are turned into 'error' events
+#      # Internal: Read bytes from $fh and put in $input
 #      sub { # Read size first packet
-#          my ($input, $output, $meta, $sender) = @_;
-#          return if length($$buf) < 4;
+#          my ($input, $output, $meta) = @_; # Sender and auth information included in $meta
+#          return if length($$input) < 4;
 #
 #          my $length = unpack("N", substr($$input, 0, 4));
 #          die "Packet length to small" if $length < 4;
@@ -19,13 +22,29 @@ use Carp qw(carp cluck croak);
 #               return;
 #           }
 #      },
+#      # Internal:
+#      #   my $readbytes = $last->(...);
+#      #   if(!$readbytes) { # 0 or undef
+#      #       # read some more data    
+#      #   } elsif($readbytes < 0) { -1, skip the last buffer and reuse input
+#      #      $next->($input, \"", $meta);
+#      #   } else {
+#      #       substr($input,  0, $readbytes, '');
+#      #   }
+#      #   $next->($output, \"", $meta);
 #      sub {
-#          my ($input, $output, $meta, $sender) = @_;
+#          my ($input, $output, $meta) = @_;
 #          $$output = decompress($$input);
-#          $meta->{id} = $sender.unpack("N", substr($$output, 0, 4)); # Make uniq id for this event
-#          return length($input);
+#          # Add session identifier for handling udp protocols where session information is hidden in a packet and not the fh.
+#          $meta->{id} = $meta{sender}.unpack("N", substr($$output, 0, 4)); # Make uniq id for this event
+#          return length($$input); # return number of consumed bytes 
 #      } 
 #   );
+#
+#   while(my $event = $mux->mux) {
+#       my $meta = $mux->meta($event->{id}); # id will be inherited from current meta
+#   }
+#
 #
 # TODO: Look into adding queuing support to IO::EventMux:
 # TODO: Check send() for empty string('').
@@ -45,8 +64,6 @@ use Carp qw(carp cluck croak);
 #      }
 #   }
 
-# TODO: Add session identifier option to $mux->add for handling udp protocols 
-#       where session information is hidden in a packet and not the fh.
 #   
 #   # Using fh and sender as identifier 
 #   my $mux->add($fh, Meta => { ... }, MetaHandler => sub {
@@ -67,7 +84,6 @@ use Carp qw(carp cluck croak);
 #       my $meta = $mux->meta($event->{id});
 #   }
 #
-
 
 our $VERSION = '2.02';
 
