@@ -1178,17 +1178,18 @@ sub close {
     };
 }
 
-=head2 B<kill($fh)>
+=head2 B<kill($fh, [$reason])>
 
 Closes a file handle without giving time to finish any outstanding operations. 
 Returns a 'closed' event, deletes all buffers and does not keep 'Meta' data.
+A 'reason' key is set with the value of $reason if it's defined.
 
 Note: Does not return the 'read_last' event.
 
 =cut
 
 sub kill {
-    my ($self, $fh) = @_;
+    my ($self, $fh, $reason) = @_;
     croak "fh is undefined" if !defined $fh;
     
     return if !exists $self->{fhs}{$fh}; # Only remove if we handle this fh
@@ -1197,6 +1198,7 @@ sub kill {
     _eventloop_remove($self, "writefh", $fh);
 
     $self->push_event({ type => 'closed', fh => $fh, 
+            (defined $reason ? (reason => $reason) : ()),
             missing => $self->buflen($fh) });
     
     $self->_close_fh($fh);
