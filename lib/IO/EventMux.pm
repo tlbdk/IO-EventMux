@@ -689,7 +689,7 @@ itself.
 =head3 ManualWrite
 
 By default EventMux handles nonblocking writing and you should use
-C<$mux->send($fh, $data)> or C<$mux->sendto($fh, $addr, $data)> to send your data,
+C<< $mux->send($fh, $data) >> or C<< $mux->sendto($fh, $addr, $data) >> to send your data,
 but if for some reason you send data yourself you can tell EventMux not to do
 writing for you and generate a 'can_write' event instead.
     
