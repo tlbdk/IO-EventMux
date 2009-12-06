@@ -1,0 +1,72 @@
+use strict;
+use warnings;
+use Carp;
+
+use Test::More tests => 1;                      # last test to print
+
+# Needed when writing to a broken pipe 
+$SIG{PIPE} = sub { # SIGPIPE
+    croak "Broken pipe";
+};
+
+my ($parent, $child);
+my ($readerOUT, $readerERR, $writerOUT, $writerERR);
+
+local $^F = 1024; # avoid close-on-exec flag being set
+socketpair($parent, $child, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+    or die "socketpair: $!";
+pipe $readerOUT, $writerOUT or die;
+pipe $readerERR, $writerERR or die;
+
+my $pid = fork;
+if ($pid == 0) {
+    close $parent or die;
+    close $readerOUT or die;
+    close $readerERR or die;
+
+    open STDOUT, ">&", $writerOUT or die;
+    open STDERR, ">&", $writerERR or die;
+
+    my $id = 0;
+
+    print {$child} pack("N/a", ($id++).": Hello socket");
+    exit;
+}
+
+close $child;
+close $writerOUT;
+close $writerERR;
+
+my $mux = IO::EventMux->new();
+
+$mux->add($parent,
+    Buffered => [
+        sub {
+            my ($input, $output, $meta) = @_; # Sender and auth information included in $meta
+            return if length($$input) < 4; # We should have at least the length bytes
+            
+            my $length = unpack("N", substr($$input, 0, 4));
+            die "Packet length to small" if $length < 4;
+            die "Packet length to big" if $length > 2 * 1024 * 1024; # Max 2MB
+            
+            return if $length < length($$input); # Return if we don't have enough data yet
+
+            $$output .= substr($$input, 4, $length);
+            return $length + 4;
+        },
+        sub {
+            my ($input, $output, $meta) = @_; 
+            if($$input =~ /^(\d+):(.*)$/) {
+                $meta->{id} = $meta->{fh}.$1;
+                $$output = $2;
+            } else {
+                die "Invalid packet";
+            }
+        }
+    ], 
+);
+
+while(my $event = $mux->mux) {
+    my $meta = $mux->meta($event->{id}); # id will be inherited from current meta
+    print "$event->{type}\n";
+}
