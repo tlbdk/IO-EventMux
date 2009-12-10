@@ -1134,7 +1134,8 @@ sub meta {
 =head2 B<remove($fh)>
 
 Make EventMux forget about a file handle. The caller will then take over the
-responsibility of closing it.
+responsibility of closing it. This also removes meta information about the
+socket.
 
 =cut
 
@@ -1144,6 +1145,7 @@ sub remove {
     _eventloop_remove($self, "readfh", $fh);
     _eventloop_remove($self, "writefh", $fh);
     delete $self->{listenfh}{$fh};
+    delete $self->{session}{$fh};
     delete $self->{fhs}{$fh};
 }
 
@@ -1209,6 +1211,7 @@ sub _close_fh {
 
     if ($self->{fhs}{$fh}) {
         delete $self->{fhs}{$fh};
+        delete $self->{sessions}{$fh};
         shutdown $fh, 2;
         CORE::close $fh or croak "closing $fh: $!";
     }
