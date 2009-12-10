@@ -40,5 +40,4 @@ t/tcp-send-accept-test.t
 t/udp-dump.t
 t/udp-send-unreachable-network.t
 t/udp.t
-TODO
 udp-benchmark.pl
