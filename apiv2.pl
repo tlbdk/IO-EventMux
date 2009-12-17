@@ -23,7 +23,7 @@ $mux->add($tcp, Buffered => [sub { # Exceptions are turned into 'error' events
     die "Packet length to small" if $length < 10; 
     die "Packet length to large" if $length < 1024;
     if($length < length($input)) {
-        $$output .= substr($$buf, 4, $length);
+        $$output .= substr($$input, 4, $length);
         return $length + 4;
     } else {
         return;
@@ -35,7 +35,7 @@ $mux->add($tcp, Buffered => [IO::EventMux::Buffered::Size('N')]); # Returns same
 
 # EventMux 3.0.x - Don't generate events until this is done
 $mux->send($tcp, "The Header");
-$mux->write_file($tcp, 'test.file'); 
+$mux->send_file($tcp, 'test.file'); 
 
 # Read header and then file
 $mux->read($tcp, 4); # Read 4 bytes and return as event
@@ -52,5 +52,64 @@ while(my $event = $mux->mux) {
 }
 
 $mux->read_size($tcp, 'N', 0); # Read 4 bytes and find size of the "real" read event 
+
+############################
+
+# EventMux 3.0.x - Don't generate events until this is done
+$mux->add($fh, 
+    SendFilter => sub {  
+        my ($input, $output, $session) = @_; # Sender and auth information included in $meta
+        $$output .= pack('N', length($$input)).$$input;
+    },
+    ReadFilter => sub { # Exceptions are turned into 'error' events 
+        my ($input, $output, $session) = @_; # Sender and auth information included in $meta
+        return if length($$input) < 4;
+
+        my $length = unpack("N", substr($$input, 0, 4));
+        die "Packet length to small" if $length < 10; 
+        die "Packet length to large" if $length < 1024;
+        if($length < length($input)) {
+            $$output .= substr($$input, 4, $length);
+            return $length + 4; # Number of bytes to remove from $$input
+        } else {
+            return;
+        }
+    },
+);
+$mux->append($fh, "data"); # Don't send data only append
+$mux->append($fh, "data"); # 
+$muc->send($fh); # Send all data and also call SendFilter before
+
+# Add tempory filter that will return an event after 4 bytes and then will be removed from the ReadFilter stack
+$mux->add_filter($fh,
+    ReadFilter => sub {
+        my ($input, $output, $session) = @_; # Sender and auth information included in $meta
+        if(length($$input) < 4) {
+            $$output .= substr($$input, 0, 4);
+            die "DELETE";
+        }
+    },
+);
+
+# Insert af filter on first position
+$mux->insert_filter($fh, 0, sub { });
+
+# Would be a wrapper for the above
+$mux->read($fh, 4);
+
+# Call the sub after 4 bytes of input data
+$mux->read($fh, 4, sub {
+    my ($data, $session) = @_;
+    my $length = unpack("N", substr($$input, 0, 4));
+
+    # Read file from $fh to test.file
+    $mux->read_file($fh, "test.file");
+});
+
+$mux->read_unpack($fh, "N", sub {
+    my($data, $session) = @_;
+
+});
+
 
 1;
