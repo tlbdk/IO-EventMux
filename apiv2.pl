@@ -14,24 +14,7 @@ my $mux = IO::EventMux->new();
 $mux->add($tcp, Buffered => ['Size' => 'N', 0, 1000]);
 # EventMux 2.0.x buffered method 
 $mux->add($tcp, Buffered => new IO::Buffered(Size => ['N', 0]));
-# EventMux 3.0.x buffered method - long form
-$mux->add($tcp, Buffered => [sub { # Exceptions are turned into 'error' events 
-    my ($input, $output, $meta) = @_; # Sender and auth information included in $meta
-    return if length($$input) < 4;
 
-    my $length = unpack("N", substr($$input, 0, 4));
-    die "Packet length to small" if $length < 10; 
-    die "Packet length to large" if $length < 1024;
-    if($length < length($input)) {
-        $$output .= substr($$input, 4, $length);
-        return $length + 4;
-    } else {
-        return;
-    }
-}] );
-
-# EventMux 3.0.x buffered method - short form
-$mux->add($tcp, Buffered => [IO::EventMux::Buffered::Size('N')]); # Returns same function as long form
 
 # EventMux 3.0.x - Don't generate events until this is done
 $mux->send($tcp, "The Header");
@@ -76,6 +59,25 @@ $mux->add($fh,
         }
     },
 );
+
+# EventMux 3.0.x buffered method - short form
+$mux->add($tcp, ReadFilter => IO::EventMux::Buffered::Size('N')); # Returns same function as long form
+
+# EventMux 3.0.x Stacked filters, you can parse both an array ref and a sub ref 
+$mux->add($tcp, ReadFilter => [ 
+    IO::EventMux::Buffered::Size('N'), # Read length bytes and length data
+    IO::EventMux::Buffered::Regex(qr/(.*)\n/si), # Split on lines
+    # TODO: Use @+ and @- to get the match positions so we can return them
+] );
+
+$mux->add($tcp, ReadFilter => sub {
+     my ($input, $output, $session) = @_; ## ?????
+     $$output = $$input; # Replace output with input
+     return 0; # Don't remove stuff from $$input 
+}); # Simple skip buffer
+
+
+
 $mux->append($fh, "data"); # Don't send data only append
 $mux->append($fh, "data"); # 
 $muc->send($fh); # Send all data and also call SendFilter before
