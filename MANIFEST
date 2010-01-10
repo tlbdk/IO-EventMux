@@ -1,3 +1,6 @@
+apiv2.pl
+bufferchain.pl
+buffering-test.pl
 Build.PL
 ChangeLog
 examples/execwait.pl
@@ -11,6 +14,7 @@ new-http-recvfile-api.pl
 README
 show-crash-with-stdin.pl
 t/00-use.t
+t/01-buffered.t.skip
 t/buffered-http-get-google.t
 t/buffered-http-simple-get.t
 t/buffered-http-simple-post.t
@@ -31,6 +35,7 @@ t/fh-types.t
 t/max-read-size.t
 t/metahandler.t
 t/perlcriticrc
+t/pipe-test.t
 t/pod-coverage.t
 t/pod.t
 t/readfh.t
