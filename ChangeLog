@@ -3,6 +3,7 @@ Version 2.02 ()
    handles to watch and there is no timeouts to wait for, this was done to make
    it easier to drop out of the loop when there are no chance that any events 
    will be generated.
+ * Formating fixes from Frank Wiegand
 
 Version 2.01 (Sun Apr 15 2009)
  * Remove IO::Epoll as default mistake
