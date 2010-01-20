@@ -60,6 +60,10 @@ $mux->add($fh,
     },
 );
 
+
+# Filters api - test test
+# @data = map { /(.*)\n/ } map { unpack "N" ) $data;
+
 # EventMux 3.0.x buffered method - short form
 $mux->add($tcp, ReadFilter => IO::EventMux::Buffered::Size('N')); # Returns same function as long form
 
